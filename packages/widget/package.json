@@ -1,0 +1,25 @@
+{
+  "name": "@paymastech/sk-login-widget",
+  "version": "0.1.0",
+  "description": "Sign in with Secret Keeper: browser popup (QR, status polling, manual code) without a framework",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/paymastech/sk-login.git", "directory": "packages/widget" },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "browser": "./dist/sk-login-widget.global.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./iife": "./dist/sk-login-widget.global.js"
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup"
+  },
+  "engines": { "node": ">=20" }
+}

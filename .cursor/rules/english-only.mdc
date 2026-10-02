@@ -1,0 +1,18 @@
+---
+description: Everything in this repository is written in English
+alwaysApply: true
+---
+
+# English only
+
+This repository is published under the `paymastech` organization. All
+content is in English: code comments and doc comments, README and other
+docs, commit messages, tags, test names and comments, release notes, and
+the UI of example apps.
+
+Exceptions: localization dictionaries (the `ru` entries next to `en`) and
+test fixtures recorded by the Secret Keeper app, where non-English strings
+are data and stay as they are.
+
+Do not use em dashes or en dashes in prose; use a hyphen, comma, colon, or
+rephrase.

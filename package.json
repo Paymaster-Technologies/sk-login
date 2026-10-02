@@ -1,0 +1,29 @@
+{
+  "name": "sk-login",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sign in with Secret Keeper: protocol core, NestJS module and browser widget",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/core -w packages/nestjs -w packages/widget",
+    "test": "vitest run",
+    "check": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/nestjs/tsconfig.json --noEmit && tsc -p packages/widget/tsconfig.json --noEmit && vitest run",
+    "demo": "npm run start -w examples/nestjs-demo",
+    "sync-sk-crypto": "scripts/sync_sk_crypto.sh"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

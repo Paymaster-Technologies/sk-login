@@ -12,6 +12,7 @@ export {
   SK_LOGIN_VERSION,
   SkLogin,
   loginMeta,
+  ownerHash,
   type AccessDecider,
   type AccessDecision,
   type EnvelopeReply,
@@ -19,6 +20,7 @@ export {
   type PollResult,
   type RefusalCode,
   type SkLoginOptions,
+  type TargetInfo,
 } from './login.js';
 export {
   KINDS,

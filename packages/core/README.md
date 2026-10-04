@@ -16,6 +16,7 @@ const sk = new SkLogin<User>({
   identity: identityFromMnemonic(process.env.SK_SERVER_MNEMONIC!),
   target: 'my-service',
   hub: 'auth_secretkeeper', // omit for the direct mode (entry in the app's skLoginTargets)
+  owner: process.env.SK_OWNER_ADDRESS, // your own sk1… address: lets you register the service in the hub catalog
   access: async (address) => (await users.has(address) ? { kind: 'granted', user: await users.get(address) } : { kind: 'denied', reason: 'unknown' }),
 });
 
@@ -35,6 +36,9 @@ const { state, user, reason } = await sk.poll(sid);   // authenticated -> set a 
 
 // POST code (browser, manual entry)
 const user = await sk.submitCode(sid, code);          // LoginError on a wrong code or a refusal
+
+// GET target (humans, hub catalog): { id, hub?, v, url, requestUrl?, serverAddress, checkDigits, ownerHash? }
+const info = sk.targetInfo(`${publicUrl}/api/sk/login`, `${publicUrl}/api/sk/data`);
 ```
 
 Data request, the same shape:
@@ -59,7 +63,7 @@ answers `expired`.
 
 Exports: `SkLogin`, `SkDataRequest`, `LoginError`, `MemoryPendingStore`,
 `MemorySidStore`, `PendingStore`, `DataRequestStore`, `SidStore` (for Redis),
-`KINDS`, `isKind`, `ownerKey`, `contextFromHeaders`, `describeContext`,
+`KINDS`, `isKind`, `ownerKey`, `ownerHash`, `TargetInfo`, `contextFromHeaders`, `describeContext`,
 `parseUserAgent`, `langFromAcceptLanguage`, `identityFromMnemonic`,
 `generateMnemonic`, `deriveIdentityKeys`, `keyCheckDigits`, `encryptEnvelope`,
 `decryptEnvelope`, `loginMeta`, `requestMeta`, `payloadQuery`.

@@ -11,6 +11,7 @@ import {
   generateMnemonic,
   type IdentityKeys,
   loginMeta,
+  ownerHash,
   ownerKey,
   requestMeta,
 } from '@paymastech/sk-login-core';
@@ -21,6 +22,8 @@ import { SkLoginModule, SkLoginService } from '../src/index.js';
 
 const TARGET = 'demo';
 const MNEMONIC = generateMnemonic();
+/** The service owner's own Secret Keeper address (not the server). */
+const OWNER = deriveIdentityKeys(generateMnemonic()).address;
 
 interface User {
   address: string;
@@ -95,7 +98,7 @@ describe('SkLoginModule over HTTP', () => {
       imports: [
         SkLoginModule.forRoot<User>({
           mnemonic: MNEMONIC,
-          target: { id: TARGET, hub: 'auth_secretkeeper', publicUrl: 'https://api.example.com/' },
+          target: { id: TARGET, hub: 'auth_secretkeeper', owner: OWNER, publicUrl: 'https://api.example.com/' },
           access: async (address): Promise<AccessDecision<User>> => ({ kind: 'granted', user: { address } }),
         }),
       ],
@@ -109,6 +112,9 @@ describe('SkLoginModule over HTTP', () => {
       const target = await http.get('/api/sk/target').expect(200);
       expect(target.body.hub).toBe('auth_secretkeeper');
       expect(target.body.id).toBe(TARGET);
+      // Only the hash of the owner address is public.
+      expect(target.body.ownerHash).toBe(ownerHash(OWNER));
+      expect(JSON.stringify(target.body)).not.toContain(OWNER);
       const init = await http.post('/api/sk/init').expect(200);
       const url = new URL(init.body.payloadUrl);
       expect(url.searchParams.get('target')).toBe('auth_secretkeeper');

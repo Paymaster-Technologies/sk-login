@@ -42,8 +42,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.2.0
-npm i $R/paymastech-sk-login-core-0.2.0.tgz $R/paymastech-sk-login-nestjs-0.2.0.tgz $R/paymastech-sk-login-widget-0.2.0.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.3.0
+npm i $R/paymastech-sk-login-core-0.3.0.tgz $R/paymastech-sk-login-nestjs-0.3.0.tgz $R/paymastech-sk-login-widget-0.3.0.tgz
 ```
 
 ```ts
@@ -179,20 +179,26 @@ Steps for the hub mode:
    ```bash
    node -e "import('@paymastech/sk-login-core').then(m => console.log(m.generateMnemonic().join(' ')))"
    ```
-2. Start the module with `target: { id: '<destination>', hub: 'auth_secretkeeper', publicUrl }`.
+2. Start the module with `target: { id: '<destination>', hub: 'auth_secretkeeper', owner, publicUrl }`.
    `id` is the short Latin name you want in the registry (`[a-z0-9_-]{1,32}`),
    `hub` is the hub's target id in the app (`auth_secretkeeper` in
-   production; the Secret Keeper team may give you a staging one).
+   production; the Secret Keeper team may give you a staging one), `owner`
+   is the `sk1…` address of your own Secret Keeper app (Settings → address).
 3. Open `GET <publicUrl>/api/sk/target`: it contains `id`, `hub`, `url`
-   (your `login` endpoint), `serverAddress` (`sk1…`) and `checkDigits` for
-   verification by voice.
-4. Hand this JSON plus the display name of your service to the Secret
-   Keeper team; they add the entry to the hub registry. From that moment
-   the sign-in works with the released app.
+   (your `login` endpoint), `serverAddress` (`sk1…`), `checkDigits` for
+   verification by voice and `ownerHash` (the hash of `owner`; the address
+   itself is not published).
+4. Open the hub catalog (`https://auth.secretkeeper.net/catalog/my`), sign in
+   with the phone whose address you put into `owner`, and submit the URL of
+   your service. The catalog fetches `GET target`, checks that `ownerHash`
+   matches the signed-in address and that `hub` names this hub, and creates
+   the registry entry. From that moment the sign-in works with the released
+   app; the app shows your host name until the hub owner approves the
+   display name you propose in the catalog.
 5. The `login` endpoint must be reachable from the internet over HTTPS: it
    is called by the hub, not by the browser.
-6. If `serverAddress` changes (a new mnemonic), tell the team to update the
-   registry entry: envelopes are encrypted to this address.
+6. If `serverAddress` changes (a new mnemonic), press "Re-check" on your
+   entry in the catalog: envelopes are encrypted to this address.
 
 In the direct mode steps 2-4 differ: start the module without `hub`, and
 the team adds the target to `skLoginTargets` and ships an app release;
@@ -220,6 +226,11 @@ to bundle it:
 
 `@paymastech/sk-login-widget` remains available for self-hosting.
 
+The hub keeps a catalog of registered services. Service owners sign in to
+the catalog with Secret Keeper and register their service by URL (see the
+checklist above); the hub owner moderates display names and can block an
+entry. The entry is public at `GET <hub>/targets/<destination>`.
+
 ## Secrets and environment
 
 - `SK_SERVER_MNEMONIC`: 12 words. The server's signing key and encryption
@@ -227,6 +238,9 @@ to bundle it:
   service to the app. Keep it in a secret manager / `.env` outside the
   repository, do not log it. Instead of the mnemonic you can pass a
   ready-made `identity` (`identityFromMnemonic`) if the keys come from a vault.
+- `SK_OWNER_ADDRESS` (suggested name): the `sk1…` address of your own Secret
+  Keeper app, passed as `target.owner`. Not a secret, but only its hash is
+  published; it is what lets you manage the service entry in the hub catalog.
 - No external services: the module makes no network calls, everything
   happens between your server, the browser and the user's phone.
   `secretkeeper.net` in the QR is needed only as a universal link
@@ -244,7 +258,7 @@ Service route: `target`.
 | `POST login` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
 | `GET status?sid=` | browser | | `{ state, reason?, ...extra }` where `state` is `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
 | `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied: true, reason, message }` or `4xx { error, message }` |
-| `GET target` | humans | | `{ id, hub?, v, url, requestUrl?, serverAddress, checkDigits }` |
+| `GET target` | humans, hub catalog | | `{ id, hub?, v, url, requestUrl?, serverAddress, checkDigits, ownerHash? }` |
 
 With `dataRequest` configured (see "Data request"):
 
@@ -289,6 +303,7 @@ request is marked `used`, and further `status` calls for this sid answer
 | `mnemonic` or `identity` | one is required | server identity |
 | `target.id` | required | service id: the hub `destination` (hub mode) or the entry in the app's `skLoginTargets` (direct mode) |
 | `target.hub` | | hub target id (e.g. `auth_secretkeeper`); switches the QR to `target=<hub>&destination=<id>` |
+| `target.owner` | | `sk1…` address of the service owner; `GET target` publishes its hash as `ownerHash` and the hub catalog lets this address register the service |
 | `target.publicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
 | `access(address)` | required | `{ kind: 'granted', user }` or `{ kind: 'denied', reason, message? }` |
 | `onAuthenticated(user, { req, res })` | | session, cookie, token; the return value goes into the JSON for the browser |

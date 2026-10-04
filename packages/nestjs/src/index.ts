@@ -10,5 +10,5 @@ export {
   type SkLoginModuleAsyncOptions,
   type SkLoginModuleOptions,
 } from './options.js';
-export { ownerKey } from '@paymastech/sk-login-core';
+export { ownerHash, ownerKey } from '@paymastech/sk-login-core';
 export type { AccessDecider, AccessDecision, DataRequestStore, Kind, PendingStore, Lang } from '@paymastech/sk-login-core';

@@ -9,28 +9,16 @@ import {
   type Lang,
   type PollResult,
   type RequestContext,
-  SK_LOGIN_VERSION,
   SkDataRequest,
   SkLogin,
+  type TargetInfo,
   identityFromMnemonic,
-  keyCheckDigits,
 } from '@paymastech/sk-login-core';
 import QRCode from 'qrcode';
 
 import { SK_LOGIN_OPTIONS, type SkLoginModuleOptions } from './options.js';
 
-export interface TargetInfo {
-  id: string;
-  /** Present in hub mode: the hub's target id the QR points at. */
-  hub?: string;
-  v: number;
-  url: string;
-  /** Present when data requests are configured: the `data` route for the app. */
-  requestUrl?: string;
-  serverAddress: string;
-  /** Check digits of the address: visual comparison with the app. */
-  checkDigits: string;
-}
+export type { TargetInfo } from '@paymastech/sk-login-core';
 
 /**
  * Wrapper around SkLogin from core for Nest: one instance per application,
@@ -42,7 +30,6 @@ export class SkLoginService<User = unknown> {
   readonly login: SkLogin<User>;
   /** Data requests (§ 4.6); undefined without the `dataRequest` option. */
   readonly request: SkDataRequest | undefined;
-  private readonly checkDigits: string;
 
   constructor(@Inject(SK_LOGIN_OPTIONS) readonly options: SkLoginModuleOptions<User>) {
     const identity = options.identity ?? (options.mnemonic ? identityFromMnemonic(options.mnemonic) : undefined);
@@ -51,6 +38,7 @@ export class SkLoginService<User = unknown> {
       identity,
       target: options.target.id,
       hub: options.target.hub,
+      owner: options.target.owner,
       access: options.access,
       store: options.store,
       ttlMs: options.ttlMs,
@@ -70,7 +58,6 @@ export class SkLoginService<User = unknown> {
           messages: options.messages,
         })
       : undefined;
-    this.checkDigits = keyCheckDigits(identity.x25519Public);
   }
 
   get serverAddress(): string {
@@ -115,15 +102,7 @@ export class SkLoginService<User = unknown> {
 
   /** Parameters for the target entry in the Secret Keeper app (or the hub registry). */
   target(loginUrl: string, requestUrl?: string): TargetInfo {
-    return {
-      id: this.options.target.id,
-      ...(this.options.target.hub ? { hub: this.options.target.hub } : {}),
-      v: SK_LOGIN_VERSION,
-      url: loginUrl,
-      ...(this.request && requestUrl ? { requestUrl } : {}),
-      serverAddress: this.serverAddress,
-      checkDigits: this.checkDigits,
-    };
+    return this.login.targetInfo(loginUrl, this.request ? requestUrl : undefined);
   }
 
   private dataRequest(): SkDataRequest {

@@ -36,7 +36,7 @@
 // returns them as JSON `{error, message}`
 // (secret_keeper/docs/HANDOFF_LASHIN_SU_LOGIN_ERRORS.md).
 
-import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 
 import {
   CHALLENGE_V1,
@@ -48,7 +48,7 @@ import {
   type RequestContext,
 } from './context.js';
 import { decryptEnvelope, encryptEnvelope, extractArmor, senderAddressFromArmor } from './crypto/envelope.js';
-import type { IdentityKeys } from './crypto/identity.js';
+import { type IdentityKeys, keyCheckDigits } from './crypto/identity.js';
 import { type Lang, type Messages, mergeMessages } from './i18n.js';
 import { SK_LOGIN_VERSION, payloadQuery } from './payload.js';
 import { MemoryPendingStore, type Pending, type PendingState, type PendingStore } from './store.js';
@@ -121,6 +121,11 @@ export interface SkLoginOptions<User> {
    *  Nothing else changes: the inner envelope is still addressed to this
    *  server and its meta still carries `target` as the service id. */
   hub?: string;
+  /** sk1… address of the person who owns this service (their Secret Keeper
+   *  app). Only its hash is published in `targetInfo()` as `ownerHash`: the
+   *  hub catalog lets exactly this address register and edit the service
+   *  entry after signing in to the catalog. */
+  owner?: string;
   /** Who to let in. Called once per sign-in, after the code check. */
   access: AccessDecider<User>;
   /** Request store; process memory by default. */
@@ -153,9 +158,35 @@ export type EnvelopeReply =
 
 export type PollResult<User> = { state: PendingState | 'expired'; user?: User; reason?: string };
 
+/** What `GET target` publishes: the entry for the app's target list or the
+ *  hub registry, readable by humans, agents and the hub catalog. */
+export interface TargetInfo {
+  id: string;
+  /** Present in hub mode: the hub's target id the QR points at. */
+  hub?: string;
+  v: number;
+  /** The `login` endpoint. */
+  url: string;
+  /** Present when the service accepts data requests: the `data` endpoint. */
+  requestUrl?: string;
+  serverAddress: string;
+  /** Check digits of the address: visual comparison with the app. */
+  checkDigits: string;
+  /** Present when `owner` is configured: `ownerHash(owner)`. */
+  ownerHash?: string;
+}
+
+/** Hash of an owner address as published in `TargetInfo.ownerHash`: the
+ *  catalog compares it with the hash of the signed-in address, the address
+ *  itself stays private. */
+export function ownerHash(address: string): string {
+  return createHash('sha256').update(address).digest('base64url');
+}
+
 export class SkLogin<User = unknown> {
   readonly target: string;
   readonly hub: string | undefined;
+  readonly owner: string | undefined;
   readonly ttlMs: number;
   readonly messages: Record<Lang, Messages>;
   private readonly identity: IdentityKeys;
@@ -168,6 +199,7 @@ export class SkLogin<User = unknown> {
     this.identity = options.identity;
     this.target = options.target;
     this.hub = options.hub || undefined;
+    this.owner = options.owner || undefined;
     this.access = options.access;
     this.ttlMs = options.ttlMs ?? DEFAULT_SID_TTL_MS;
     this.now = options.now ?? Date.now;
@@ -178,6 +210,21 @@ export class SkLogin<User = unknown> {
 
   get serverAddress(): string {
     return this.identity.address;
+  }
+
+  /** The `GET target` document. `requestUrl` only when the service also
+   *  runs SkDataRequest. */
+  targetInfo(loginUrl: string, requestUrl?: string): TargetInfo {
+    return {
+      id: this.target,
+      ...(this.hub ? { hub: this.hub } : {}),
+      v: SK_LOGIN_VERSION,
+      url: loginUrl,
+      ...(requestUrl ? { requestUrl } : {}),
+      serverAddress: this.identity.address,
+      checkDigits: keyCheckDigits(this.identity.x25519Public),
+      ...(this.owner ? { ownerHash: ownerHash(this.owner) } : {}),
+    };
   }
 
   /** Step 1: a new request; `ctx` is the browser that opened it. */

@@ -19,7 +19,9 @@ import {
   extractArmor,
   generateMnemonic,
   type IdentityKeys,
+  keyCheckDigits,
   loginMeta,
+  ownerHash,
   senderAddressFromArmor,
 } from '../src/index.js';
 
@@ -161,6 +163,25 @@ describe('sign-in flow', () => {
     const direct = await make({ hub: '' }).init();
     expect(new URL(direct.payloadUrl).searchParams.get('target')).toBe(TARGET);
     expect(new URL(direct.payloadUrl).searchParams.has('destination')).toBe(false);
+  });
+
+  it('targetInfo publishes the entry for the app list or the hub catalog', () => {
+    const plain = login.targetInfo('https://x.example/api/sk/login');
+    expect(plain).toEqual({
+      id: TARGET,
+      v: SK_LOGIN_VERSION,
+      url: 'https://x.example/api/sk/login',
+      serverAddress: server.address,
+      checkDigits: keyCheckDigits(server.x25519Public),
+    });
+    const owner = app.keys.address;
+    const full = make({ hub: 'auth_secretkeeper', owner }).targetInfo('https://x.example/l', 'https://x.example/d');
+    expect(full.hub).toBe('auth_secretkeeper');
+    expect(full.requestUrl).toBe('https://x.example/d');
+    // The owner address itself is never published, only its hash.
+    expect(full.ownerHash).toBe(ownerHash(owner));
+    expect(JSON.stringify(full)).not.toContain(owner);
+    expect(ownerHash(owner)).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it('two-step: request → challenge → code → authenticated once', async () => {

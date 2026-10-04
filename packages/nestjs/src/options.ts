@@ -41,6 +41,10 @@ export interface SkLoginModuleOptions<User = unknown> {
      *  The QR becomes `target=<hub>&destination=<id>`; the hub relays the
      *  app's envelopes to this server's `login` route. */
     hub?: string;
+    /** sk1… address of the service owner (their Secret Keeper app). Its
+     *  hash goes to `GET target` as `ownerHash`; the hub catalog lets this
+     *  address register and edit the service entry. */
+    owner?: string;
     /** Public origin of the service for `GET target` (e.g. https://api.example.com);
      *  without it, built from the request's Host and X-Forwarded-Proto. */
     publicUrl?: string;

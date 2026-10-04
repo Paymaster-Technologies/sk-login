@@ -146,6 +146,23 @@ describe('sign-in flow', () => {
     expect(init.expiresAt).toBe(now + DEFAULT_SID_TTL_MS);
   });
 
+  it('hub mode: the payload points at the hub and names this service as destination', async () => {
+    const viaHub = make({ hub: 'auth_secretkeeper' });
+    const init = await viaHub.init();
+    const url = new URL(init.payloadUrl);
+    expect(url.searchParams.get('target')).toBe('auth_secretkeeper');
+    expect(url.searchParams.get('destination')).toBe(TARGET);
+    expect(url.searchParams.get('sid')).toBe(init.sid);
+    // The envelopes the hub relays are unchanged: meta.target is still the service id.
+    const reply = await viaHub.handleEnvelope(app.request(init.sid));
+    expect(reply.kind).toBe('challenge');
+    expect((await viaHub.poll(init.sid)).state).toBe('challenged');
+    // An empty hub means direct mode.
+    const direct = await make({ hub: '' }).init();
+    expect(new URL(direct.payloadUrl).searchParams.get('target')).toBe(TARGET);
+    expect(new URL(direct.payloadUrl).searchParams.has('destination')).toBe(false);
+  });
+
   it('two-step: request → challenge → code → authenticated once', async () => {
     const { sid } = await login.init();
     expect(await state(sid)).toBe('new');

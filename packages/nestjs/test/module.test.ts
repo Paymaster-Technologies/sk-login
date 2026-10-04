@@ -88,6 +88,34 @@ describe('SkLoginModule over HTTP', () => {
     });
   });
 
+  it('hub mode: target reports the hub and init points the QR at it', async () => {
+    @Module({
+      imports: [
+        SkLoginModule.forRoot<User>({
+          mnemonic: MNEMONIC,
+          target: { id: TARGET, hub: 'auth_secretkeeper', publicUrl: 'https://api.example.com/' },
+          access: async (address): Promise<AccessDecision<User>> => ({ kind: 'granted', user: { address } }),
+        }),
+      ],
+    })
+    class HubModule {}
+    const ref = await Test.createTestingModule({ imports: [HubModule] }).compile();
+    const hubApp = ref.createNestApplication();
+    await hubApp.init();
+    try {
+      const http = request(hubApp.getHttpServer());
+      const target = await http.get('/api/sk/target').expect(200);
+      expect(target.body.hub).toBe('auth_secretkeeper');
+      expect(target.body.id).toBe(TARGET);
+      const init = await http.post('/api/sk/init').expect(200);
+      const url = new URL(init.body.payloadUrl);
+      expect(url.searchParams.get('target')).toBe('auth_secretkeeper');
+      expect(url.searchParams.get('destination')).toBe(TARGET);
+    } finally {
+      await hubApp.close();
+    }
+  });
+
   it('full flow: init → envelope → challenge → code → status with session', async () => {
     const http = request(app.getHttpServer());
     const init = await http

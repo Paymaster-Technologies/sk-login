@@ -14,6 +14,7 @@ import { SkLogin, identityFromMnemonic, contextFromHeaders, langFromAcceptLangua
 const sk = new SkLogin<User>({
   identity: identityFromMnemonic(process.env.SK_SERVER_MNEMONIC!),
   target: 'my-service',
+  hub: 'auth_secretkeeper', // omit for the direct mode (entry in the app's skLoginTargets)
   access: async (address) => (await users.has(address) ? { kind: 'granted', user: await users.get(address) } : { kind: 'denied', reason: 'unknown' }),
 });
 

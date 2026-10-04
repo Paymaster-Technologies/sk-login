@@ -45,7 +45,13 @@ export {
   validateMnemonic,
   type IdentityKeys,
 } from './crypto/identity.js';
-export { decryptEnvelope, encryptEnvelope, extractArmor, senderAddressFromArmor } from './crypto/envelope.js';
+export {
+  containsArmor,
+  decryptEnvelope,
+  encryptEnvelope,
+  extractArmor,
+  senderAddressFromArmor,
+} from './crypto/envelope.js';
 
 import { deriveIdentityKeys, type IdentityKeys, validateMnemonic } from './crypto/identity.js';
 

@@ -33,8 +33,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.1.0
-npm i $R/paymastech-sk-login-core-0.1.0.tgz $R/paymastech-sk-login-nestjs-0.1.0.tgz $R/paymastech-sk-login-widget-0.1.0.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.1.1
+npm i $R/paymastech-sk-login-core-0.1.1.tgz $R/paymastech-sk-login-nestjs-0.1.1.tgz $R/paymastech-sk-login-widget-0.1.1.tgz
 ```
 
 ```ts
@@ -72,9 +72,9 @@ Fastify.
 Sign-in page:
 
 ```html
-<!-- serve node_modules/@paymastech/sk-login-widget/dist/sk-login-widget.global.js
-     as a static file; after the npm release it is also available from jsDelivr -->
-<script src="/static/sk-login-widget.global.js"></script>
+<!-- from the hub (see "Hub"), or serve
+     node_modules/@paymastech/sk-login-widget/dist/sk-login-widget.global.js as a static file -->
+<script src="https://auth.secretkeeper.net/widget.js"></script>
 <button id="login">Sign in</button>
 <script>
   const login = SkLoginWidget.mountSkLogin({
@@ -94,29 +94,62 @@ light and dark themes, and becomes a bottom sheet on narrow screens.
 
 ## Onboarding a new service (checklist)
 
-Targets (where the app is allowed to send a request) are hardcoded inside
-the Secret Keeper app: id, URL of the `login` endpoint and the server
-address. Without an entry in the app the sign-in will not work: the QR
-scans, but the app does not know where to write. So for a new service you
-need to:
+The Secret Keeper app only sends envelopes to targets it knows. There are
+two ways to become one:
+
+- **Through the hub** (recommended): the app has a single built-in entry
+  for the hub (`auth.secretkeeper.net`), and your service is registered in
+  the hub's registry under a short `destination` id. No app release is
+  needed. The hub relays the app's envelopes to your `login` endpoint and
+  does not read them: they are encrypted to your server address.
+- **Direct**: your id, `login` URL and server address are hardcoded in the
+  app's `skLoginTargets`, which requires an app release per service.
+
+Steps for the hub mode:
 
 1. Generate the server mnemonic (once, keep it as a secret):
    ```bash
    node -e "import('@paymastech/sk-login-core').then(m => console.log(m.generateMnemonic().join(' ')))"
    ```
-2. Start the module with `target.id` (a short Latin service name) and
-   `publicUrl`. Open `GET <publicUrl>/api/sk/target`: it contains `id`,
-   `url` (where the app sends envelopes), `serverAddress` (`sk1…`) and
-   `checkDigits` for verification by voice.
-3. Hand this JSON to the Secret Keeper team. They will add the target to
-   `skLoginTargets` and ship an app release; until that release is out,
-   the sign-in can only be tested with the phone emulation (see demo,
-   `DEMO_FAKE_PHONE=1`).
-4. The `login` endpoint must be reachable from the internet over HTTPS: it
-   is called by the phone, not by the browser.
-5. If `serverAddress` changes (a new mnemonic), the target in the app must
-   be updated: envelopes are encrypted to this address, and older apps will
-   stop getting through.
+2. Start the module with `target: { id: '<destination>', hub: 'auth_secretkeeper', publicUrl }`.
+   `id` is the short Latin name you want in the registry (`[a-z0-9_-]{1,32}`),
+   `hub` is the hub's target id in the app (`auth_secretkeeper` in
+   production; the Secret Keeper team may give you a staging one).
+3. Open `GET <publicUrl>/api/sk/target`: it contains `id`, `hub`, `url`
+   (your `login` endpoint), `serverAddress` (`sk1…`) and `checkDigits` for
+   verification by voice.
+4. Hand this JSON plus the display name of your service to the Secret
+   Keeper team; they add the entry to the hub registry. From that moment
+   the sign-in works with the released app.
+5. The `login` endpoint must be reachable from the internet over HTTPS: it
+   is called by the hub, not by the browser.
+6. If `serverAddress` changes (a new mnemonic), tell the team to update the
+   registry entry: envelopes are encrypted to this address.
+
+In the direct mode steps 2-4 differ: start the module without `hub`, and
+the team adds the target to `skLoginTargets` and ships an app release;
+until that release is out, the sign-in can only be tested with the phone
+emulation (see demo, `DEMO_FAKE_PHONE=1`).
+
+## Hub
+
+The hub is a relay operated by the Secret Keeper team. With `hub` set the
+QR becomes `https://secretkeeper.net/auth?v=1&sid=…&target=<hub>&destination=<id>`.
+The app asks the hub for the display name and server address of
+`destination`, encrypts the usual envelope to your server, wraps it into an
+outer envelope addressed to the hub, and posts it there. The hub decrypts
+only the outer envelope (which authenticates the sender), forwards the
+inner one to your `login` URL and returns your reply unchanged. Your server
+sees exactly the same envelopes as in the direct mode, so the module does
+not change behavior; only the QR does.
+
+The hub also serves the browser widget, so you do not have to bundle it:
+
+```html
+<script src="https://auth.secretkeeper.net/widget.js"></script>
+```
+
+`@paymastech/sk-login-widget` remains available for self-hosting.
 
 ## Secrets and environment
 
@@ -142,7 +175,7 @@ Service route: `target`.
 | `POST login` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
 | `GET status?sid=` | browser | | `{ state, reason?, ...extra }` where `state` is `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
 | `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied: true, reason, message }` or `4xx { error, message }` |
-| `GET target` | humans | | `{ id, v, url, serverAddress, checkDigits }` |
+| `GET target` | humans | | `{ id, hub?, v, url, serverAddress, checkDigits }` |
 
 `error` codes in replies to the app and the browser:
 
@@ -174,7 +207,8 @@ request is marked `used`, and further `status` calls for this sid answer
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `mnemonic` or `identity` | one is required | server identity |
-| `target.id` | required | id from the app's `skLoginTargets` |
+| `target.id` | required | service id: the hub `destination` (hub mode) or the entry in the app's `skLoginTargets` (direct mode) |
+| `target.hub` | | hub target id (e.g. `auth_secretkeeper`); switches the QR to `target=<hub>&destination=<id>` |
 | `target.publicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
 | `access(address)` | required | `{ kind: 'granted', user }` or `{ kind: 'denied', reason, message? }` |
 | `onAuthenticated(user, { req, res })` | | session, cookie, token; the return value goes into the JSON for the browser |

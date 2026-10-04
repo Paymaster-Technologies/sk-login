@@ -33,8 +33,13 @@ export interface SkLoginModuleOptions<User = unknown> {
   mnemonic?: string | string[];
   identity?: IdentityKeys;
   target: {
-    /** Target id in the Secret Keeper app's `skLoginTargets`. */
+    /** Service id: the entry in the Secret Keeper app's `skLoginTargets`
+     *  (direct mode) or the `destination` registered at the hub (hub mode). */
     id: string;
+    /** Hub mode: the hub's target id in the app (e.g. `auth_secretkeeper`).
+     *  The QR becomes `target=<hub>&destination=<id>`; the hub relays the
+     *  app's envelopes to this server's `login` route. */
+    hub?: string;
     /** Public origin of the service for `GET target` (e.g. https://api.example.com);
      *  without it, built from the request's Host and X-Forwarded-Proto. */
     publicUrl?: string;

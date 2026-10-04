@@ -5,7 +5,9 @@
 // Steps:
 //   1. The browser opens the sign-in popup; init issues a one-time sid and
 //      the payload string `https://secretkeeper.net/auth?v=1&sid=…&target=<id>`
-//      (a QR for another device, `sk://auth?…` for the same one).
+//      (a QR for another device, `sk://auth?…` for the same one). In hub
+//      mode (`hub` option) the payload is `target=<hub>&destination=<id>`:
+//      the app sends through the hub, which relays to this server.
 //   2. The app POSTs a raw armored envelope (empty text, meta
 //      {type:"sk-login", data:{target,v,sid}}) to the server endpoint.
 //   3. The server decrypts it: a successful decrypt authenticates the
@@ -101,9 +103,16 @@ export interface SkLoginOptions<User> {
   /** Server identity (deriveIdentityKeys from the mnemonic). Its sk1…
    *  address is recorded in the target list of the Secret Keeper app. */
   identity: IdentityKeys;
-  /** Target id as in the app's `skLoginTargets`; envelopes with another
-   *  target are rejected. */
+  /** Target id: the service id in the app's `skLoginTargets` (direct mode)
+   *  or its `destination` in the hub registry (hub mode). Envelopes with
+   *  another target are rejected. */
   target: string;
+  /** Hub mode: the hub's target id in the app (e.g. `auth_secretkeeper`).
+   *  The QR then carries `target=<hub>&destination=<target>`, the app sends
+   *  envelopes through the hub and the hub relays them to this server.
+   *  Nothing else changes: the inner envelope is still addressed to this
+   *  server and its meta still carries `target` as the service id. */
+  hub?: string;
   /** Who to let in. Called once per sign-in, after the code check. */
   access: AccessDecider<User>;
   /** Request store; process memory by default. */
@@ -138,6 +147,7 @@ export type PollResult<User> = { state: PendingState | 'expired'; user?: User; r
 
 export class SkLogin<User = unknown> {
   readonly target: string;
+  readonly hub: string | undefined;
   readonly ttlMs: number;
   readonly messages: Record<Lang, Messages>;
   private readonly identity: IdentityKeys;
@@ -149,6 +159,7 @@ export class SkLogin<User = unknown> {
   constructor(options: SkLoginOptions<User>) {
     this.identity = options.identity;
     this.target = options.target;
+    this.hub = options.hub || undefined;
     this.access = options.access;
     this.ttlMs = options.ttlMs ?? DEFAULT_SID_TTL_MS;
     this.now = options.now ?? Date.now;
@@ -167,7 +178,13 @@ export class SkLogin<User = unknown> {
     const createdAt = this.now();
     const expiresAt = createdAt + this.ttlMs;
     await this.save({ sid, createdAt, expiresAt, state: 'new', ctx, codeAttempts: 0 });
-    const query = new URLSearchParams({ v: String(SK_LOGIN_VERSION), sid, target: this.target });
+    const query = new URLSearchParams({ v: String(SK_LOGIN_VERSION), sid });
+    if (this.hub) {
+      query.set('target', this.hub);
+      query.set('destination', this.target);
+    } else {
+      query.set('target', this.target);
+    }
     return {
       sid,
       payloadUrl: `${SK_AUTH_URL}?${query}`,

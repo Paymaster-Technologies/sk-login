@@ -16,6 +16,8 @@ import { SK_LOGIN_OPTIONS, type SkLoginModuleOptions } from './options.js';
 
 export interface TargetInfo {
   id: string;
+  /** Present in hub mode: the hub's target id the QR points at. */
+  hub?: string;
   v: number;
   url: string;
   serverAddress: string;
@@ -39,6 +41,7 @@ export class SkLoginService<User = unknown> {
     this.login = new SkLogin<User>({
       identity,
       target: options.target.id,
+      hub: options.target.hub,
       access: options.access,
       store: options.store,
       ttlMs: options.ttlMs,
@@ -77,6 +80,7 @@ export class SkLoginService<User = unknown> {
   target(loginUrl: string): TargetInfo {
     return {
       id: this.options.target.id,
+      ...(this.options.target.hub ? { hub: this.options.target.hub } : {}),
       v: SK_LOGIN_VERSION,
       url: loginUrl,
       serverAddress: this.serverAddress,

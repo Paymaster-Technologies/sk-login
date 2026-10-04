@@ -1,5 +1,6 @@
 import type {
   AccessDecider,
+  DataRequestStore,
   Describe,
   GeoLookup,
   IdentityKeys,
@@ -47,6 +48,12 @@ export interface SkLoginModuleOptions<User = unknown> {
   /** Who to let in. Called once per sign-in, after the code check. */
   access: AccessDecider<User>;
   onAuthenticated?: OnAuthenticated<User>;
+  /**
+   * Data requests from the vault (protocol § 4.6): routes `request/init`,
+   * `request/status` and `data`. Without this option those routes answer
+   * 404 `not-configured` and `GET target` has no `requestUrl`.
+   */
+  dataRequest?: DataRequestOptions;
   /** Request store; process memory by default (a single replica). */
   store?: PendingStore<User>;
   ttlMs?: number;
@@ -61,6 +68,20 @@ export interface SkLoginModuleOptions<User = unknown> {
   maxBodyBytes?: number;
 }
 
+export interface DataRequestOptions {
+  /**
+   * Who owns a request: a key of the page session (e.g. `ownerKey(token)`
+   * from core over the session cookie). Only this owner receives the
+   * values on `request/status`. `undefined` means no session: 401.
+   */
+  owner: (http: HttpPair) => string | undefined | Promise<string | undefined>;
+  /** Request store; process memory by default. */
+  store?: DataRequestStore;
+  ttlMs?: number;
+  /** Body limit of the `data` route; a vault record is a few kilobytes. Defaults to 64 KiB. */
+  maxBodyBytes?: number;
+}
+
 export interface SkLoginModuleAsyncOptions<User = unknown> {
   imports?: any[];
   inject?: any[];
@@ -71,3 +92,4 @@ export interface SkLoginModuleAsyncOptions<User = unknown> {
 
 export const DEFAULT_ROUTE_PREFIX = 'api/sk';
 export const DEFAULT_MAX_BODY = 16 * 1024;
+export const DEFAULT_DATA_MAX_BODY = 64 * 1024;

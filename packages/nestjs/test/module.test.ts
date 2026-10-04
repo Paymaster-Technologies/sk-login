@@ -11,6 +11,8 @@ import {
   generateMnemonic,
   type IdentityKeys,
   loginMeta,
+  ownerKey,
+  requestMeta,
 } from '@paymastech/sk-login-core';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -204,6 +206,104 @@ describe('SkLoginModule over HTTP', () => {
       expect(r2.body).toEqual({ denied: true, reason: 'blocked', message: 'Nope' });
     } finally {
       blocked = false;
+    }
+  });
+});
+
+describe('data requests (§ 4.6) over HTTP', () => {
+  it('answers not-configured without the dataRequest option, target has no requestUrl', async () => {
+    const http = request(app.getHttpServer());
+    const target = await http.get('/auth/sk/target').expect(200);
+    expect(target.body.requestUrl).toBeUndefined();
+    await http.post('/auth/sk/request/init').send({ kind: 'card-details' }).expect(404);
+    await http.get('/auth/sk/request/status?sid=x').expect(404);
+    await http.post('/auth/sk/data').set('content-type', 'text/plain').send('hello').expect(404);
+  });
+
+  it('full flow: request/init → sk-data-request → challenge → sk-data → status hands the values once', async () => {
+    @Module({
+      imports: [
+        SkLoginModule.forRoot<User>({
+          mnemonic: MNEMONIC,
+          target: { id: TARGET, publicUrl: 'https://api.example.com/' },
+          access: async (address): Promise<AccessDecision<User>> => ({ kind: 'granted', user: { address } }),
+          // The owner is the page session: here a header, in a real service a cookie.
+          dataRequest: { owner: ({ req }) => (req.headers['x-session'] ? ownerKey(req.headers['x-session']) : undefined) },
+        }),
+      ],
+    })
+    class DataModule {}
+    const ref = await Test.createTestingModule({ imports: [DataModule] }).compile();
+    const dataApp = ref.createNestApplication();
+    await dataApp.init();
+    try {
+      const http = request(dataApp.getHttpServer());
+      const target = await http.get('/api/sk/target').expect(200);
+      expect(target.body.requestUrl).toBe('https://api.example.com/api/sk/data');
+
+      await http.post('/api/sk/request/init').send({ kind: 'card-details' }).expect(401);
+      await http.post('/api/sk/request/init').set('x-session', 'a').send({ kind: 'pin' }).expect(400);
+      const init = await http.post('/api/sk/request/init').set('x-session', 'a').send({ kind: 'card-details' }).expect(200);
+      const { sid } = init.body;
+      expect(new URL(init.body.payloadUrl).searchParams.get('kind')).toBe('card-details');
+      expect(init.body.qrSvg).toContain('<svg');
+
+      const first = await http
+        .post('/api/sk/data')
+        .set('content-type', 'text/plain')
+        .send(
+          encryptEnvelope({
+            sender: phone,
+            recipientAddress: server.address,
+            plaintext: '',
+            meta: requestMeta(TARGET, 'sk-data-request', sid, 'card-details'),
+          }),
+        )
+        .expect(200);
+      const { text: code, meta } = openChallenge(first.text);
+      expect(meta.type).toBe('sk-data-challenge');
+      const status = await http.get(`/api/sk/request/status?sid=${sid}`).set('x-session', 'a').expect(200);
+      expect(status.body.state).toBe('challenged');
+
+      const values = { holder: 'IVAN IVANOV', pan: '4111 1111 1111 1111', exp: '12/29', cvv: '123' };
+      await http
+        .post('/api/sk/data')
+        .set('content-type', 'text/plain')
+        .send(
+          encryptEnvelope({
+            sender: phone,
+            recipientAddress: server.address,
+            plaintext: JSON.stringify(values),
+            meta: requestMeta(TARGET, 'sk-data', sid, 'card-details', code),
+          }),
+        )
+        .expect(204);
+
+      // A stranger's session sees nothing, the owner gets the values once.
+      const other = await http.get(`/api/sk/request/status?sid=${sid}`).set('x-session', 'b').expect(200);
+      expect(other.body.state).toBe('expired');
+      const filled = await http.get(`/api/sk/request/status?sid=${sid}`).set('x-session', 'a').expect(200);
+      expect(filled.body).toMatchObject({ state: 'filled', values, sender: phone.address });
+      const again = await http.get(`/api/sk/request/status?sid=${sid}`).set('x-session', 'a').expect(200);
+      expect(again.body.state).toBe('expired');
+
+      // A refusal is JSON for the app, in the request language.
+      const wrongKind = await http
+        .post('/api/sk/data')
+        .set('content-type', 'text/plain')
+        .set('accept-language', 'ru')
+        .send(
+          encryptEnvelope({
+            sender: phone,
+            recipientAddress: server.address,
+            plaintext: '',
+            meta: requestMeta(TARGET, 'sk-data-request', sid, 'login-password'),
+          }),
+        )
+        .expect(404);
+      expect(wrongKind.body.error).toBe('sid-expired');
+    } finally {
+      await dataApp.close();
     }
   });
 });

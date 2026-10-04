@@ -2,7 +2,9 @@
 
 NestJS module for sign-in through Secret Keeper. It mounts the `init`,
 `login`, `status`, `code` and `target` routes under a prefix (`api/sk` by
-default) and exports `SkLoginService`.
+default) and exports `SkLoginService`. With `dataRequest` configured it also
+mounts `request/init`, `request/status` and `data` for filling forms from
+the user's vault.
 
 ```bash
 npm i @paymastech/sk-login-nestjs
@@ -24,11 +26,20 @@ import { SkLoginModule } from '@paymastech/sk-login-nestjs';
         res.header('set-cookie', await sessions.cookieFor(user));
         return { userId: user.id };
       },
+      // Optional: data requests (§ 4.6). The owner is the page session; only it gets the values.
+      dataRequest: {
+        owner: ({ req }) => {
+          const token = sessions.tokenFrom(req);
+          return token ? ownerKey(token) : undefined;
+        },
+      },
     }),
   ],
 })
 export class AppModule {}
 ```
+
+`ownerKey` is exported from this package too.
 
 With ConfigService:
 

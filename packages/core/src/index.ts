@@ -1,6 +1,7 @@
-// @paymastech/sk-login-core: sign-in through Secret Keeper, framework-agnostic
-// server side. An adapter provides five HTTP routes on top of SkLogin
-// (see @paymastech/sk-login-nestjs), the widget is the browser popup.
+// @paymastech/sk-login-core: sign-in (§ 4.5) and data requests (§ 4.6)
+// through Secret Keeper, framework-agnostic server side. An adapter
+// provides the HTTP routes on top of SkLogin and SkDataRequest (see
+// @paymastech/sk-login-nestjs), the widget is the browser popup.
 
 export {
   DEFAULT_SID_TTL_MS,
@@ -19,7 +20,33 @@ export {
   type RefusalCode,
   type SkLoginOptions,
 } from './login.js';
-export { MemoryPendingStore, type Pending, type PendingState, type PendingStore } from './store.js';
+export {
+  KINDS,
+  KIND_IDS,
+  SK_REQUEST_SCHEME_URL,
+  SK_REQUEST_URL,
+  SkDataRequest,
+  isKind,
+  ownerKey,
+  requestMeta,
+  type DataPending,
+  type DataReply,
+  type DataRequestInit,
+  type DataRequestPoll,
+  type DataRequestState,
+  type DataRequestStore,
+  type Kind,
+  type SkDataRequestOptions,
+} from './request.js';
+export { payloadQuery } from './payload.js';
+export {
+  MemoryPendingStore,
+  MemorySidStore,
+  type Pending,
+  type PendingState,
+  type PendingStore,
+  type SidStore,
+} from './store.js';
 export {
   CHALLENGE_V1,
   CHALLENGE_V2,

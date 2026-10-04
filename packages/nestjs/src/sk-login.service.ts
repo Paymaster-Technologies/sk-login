@@ -1,11 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  type DataReply,
+  type DataRequestInit,
+  type DataRequestPoll,
   type EnvelopeReply,
   type InitResult,
+  type Kind,
   type Lang,
   type PollResult,
   type RequestContext,
   SK_LOGIN_VERSION,
+  SkDataRequest,
   SkLogin,
   identityFromMnemonic,
   keyCheckDigits,
@@ -20,6 +25,8 @@ export interface TargetInfo {
   hub?: string;
   v: number;
   url: string;
+  /** Present when data requests are configured: the `data` route for the app. */
+  requestUrl?: string;
   serverAddress: string;
   /** Check digits of the address: visual comparison with the app. */
   checkDigits: string;
@@ -33,6 +40,8 @@ export interface TargetInfo {
 @Injectable()
 export class SkLoginService<User = unknown> {
   readonly login: SkLogin<User>;
+  /** Data requests (§ 4.6); undefined without the `dataRequest` option. */
+  readonly request: SkDataRequest | undefined;
   private readonly checkDigits: string;
 
   constructor(@Inject(SK_LOGIN_OPTIONS) readonly options: SkLoginModuleOptions<User>) {
@@ -49,6 +58,18 @@ export class SkLoginService<User = unknown> {
       geo: options.geo,
       messages: options.messages,
     });
+    this.request = options.dataRequest
+      ? new SkDataRequest({
+          identity,
+          target: options.target.id,
+          hub: options.target.hub,
+          store: options.dataRequest.store,
+          ttlMs: options.dataRequest.ttlMs ?? options.ttlMs,
+          describe: options.describe,
+          geo: options.geo,
+          messages: options.messages,
+        })
+      : undefined;
     this.checkDigits = keyCheckDigits(identity.x25519Public);
   }
 
@@ -76,15 +97,37 @@ export class SkLoginService<User = unknown> {
     return this.login.poll(sid);
   }
 
-  /** Parameters for the target entry in the Secret Keeper app. */
-  target(loginUrl: string): TargetInfo {
+  /** Data request plus the QR as SVG; throws without the `dataRequest` option. */
+  async initRequest(kind: Kind, owner: string, ctx?: RequestContext): Promise<DataRequestInit & { qrSvg?: string }> {
+    const init = await this.dataRequest().init(kind, owner, ctx);
+    if (this.options.qr === false) return init;
+    const qrSvg = await QRCode.toString(init.payloadUrl, { type: 'svg', margin: 0, errorCorrectionLevel: 'H' });
+    return { ...init, qrSvg };
+  }
+
+  handleDataEnvelope(body: string, lang: Lang): Promise<DataReply> {
+    return this.dataRequest().handleEnvelope(body, lang);
+  }
+
+  pollRequest(sid: string, owner: string): Promise<DataRequestPoll> {
+    return this.dataRequest().poll(sid, owner);
+  }
+
+  /** Parameters for the target entry in the Secret Keeper app (or the hub registry). */
+  target(loginUrl: string, requestUrl?: string): TargetInfo {
     return {
       id: this.options.target.id,
       ...(this.options.target.hub ? { hub: this.options.target.hub } : {}),
       v: SK_LOGIN_VERSION,
       url: loginUrl,
+      ...(this.request && requestUrl ? { requestUrl } : {}),
       serverAddress: this.serverAddress,
       checkDigits: this.checkDigits,
     };
+  }
+
+  private dataRequest(): SkDataRequest {
+    if (!this.request) throw new Error('SkLoginModule: data requests are not configured (`dataRequest` option)');
+    return this.request;
   }
 }

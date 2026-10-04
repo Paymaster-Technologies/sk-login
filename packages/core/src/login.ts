@@ -50,9 +50,10 @@ import {
 import { decryptEnvelope, encryptEnvelope, extractArmor, senderAddressFromArmor } from './crypto/envelope.js';
 import type { IdentityKeys } from './crypto/identity.js';
 import { type Lang, type Messages, mergeMessages } from './i18n.js';
+import { SK_LOGIN_VERSION, payloadQuery } from './payload.js';
 import { MemoryPendingStore, type Pending, type PendingState, type PendingStore } from './store.js';
 
-export const SK_LOGIN_VERSION = 1;
+export { SK_LOGIN_VERSION };
 /** Secret Keeper dispatcher page: universal link, used by the QR and the button. */
 export const SK_AUTH_URL = 'https://secretkeeper.net/auth';
 /** Custom app scheme for the "Sign in with the app" button on the same device. */
@@ -70,7 +71,14 @@ const CODE_LENGTH = 6;
 export type { Pending, PendingState, PendingStore };
 
 /** Refusal reason codes in the JSON error for the app. */
-export type RefusalCode = 'bad-envelope' | 'bad-meta' | 'in-progress' | 'sid-expired' | 'code-invalid' | 'access-denied';
+export type RefusalCode =
+  | 'bad-envelope'
+  | 'bad-meta'
+  | 'in-progress'
+  | 'sid-expired'
+  | 'code-invalid'
+  | 'access-denied'
+  | 'kind-mismatch';
 
 /** Protocol error: HTTP status, reason code and user-facing text;
  *  `access-denied` also carries the service's refusal reason (for the browser). */
@@ -178,13 +186,7 @@ export class SkLogin<User = unknown> {
     const createdAt = this.now();
     const expiresAt = createdAt + this.ttlMs;
     await this.save({ sid, createdAt, expiresAt, state: 'new', ctx, codeAttempts: 0 });
-    const query = new URLSearchParams({ v: String(SK_LOGIN_VERSION), sid });
-    if (this.hub) {
-      query.set('target', this.hub);
-      query.set('destination', this.target);
-    } else {
-      query.set('target', this.target);
-    }
+    const query = payloadQuery(sid, this.target, this.hub);
     return {
       sid,
       payloadUrl: `${SK_AUTH_URL}?${query}`,

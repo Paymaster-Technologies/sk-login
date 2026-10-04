@@ -1,5 +1,6 @@
 // Minimal NestJS app with Secret Keeper sign-in: the module under /api/sk,
-// a page with the widget at /, a cookie session, /me reads it.
+// a page with the widget at /, a cookie session, /me reads it. Signed in,
+// the page also shows a card form with "Fill from Secret Keeper" (§ 4.6).
 //
 //   SK_SERVER_MNEMONIC="word1 … word12" npm run demo
 //
@@ -13,7 +14,7 @@ import 'reflect-metadata';
 
 import { Controller, Get, Module, Req, Res } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { generateMnemonic, type AccessDecision } from '@paymastech/sk-login-core';
+import { generateMnemonic, ownerKey, type AccessDecision } from '@paymastech/sk-login-core';
 import { SkLoginModule } from '@paymastech/sk-login-nestjs';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -34,6 +35,7 @@ interface User {
 
 /** Demo sessions: token to user, in memory. */
 const sessions = new Map<string, User>();
+const sessionToken = (req: any) => /(?:^|;\s*)demo_session=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
 
 @Controller()
 class PagesController {
@@ -80,6 +82,14 @@ const mnemonic = process.env.SK_SERVER_MNEMONIC ?? generateMnemonic().join(' ');
         sessions.set(token, user);
         res.header('set-cookie', `demo_session=${token}; Path=/; HttpOnly; SameSite=Lax`);
         return { address: user.address };
+      },
+      // Data requests (§ 4.6): the owner of a request is the page session;
+      // only it receives the record. Here anyone with a session cookie.
+      dataRequest: {
+        owner: ({ req }) => {
+          const token = sessionToken(req);
+          return token && sessions.has(token) ? ownerKey(token) : undefined;
+        },
       },
     }),
   ],

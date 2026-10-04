@@ -1,6 +1,9 @@
 // Widget styles: everything under the skl- prefix, colors via CSS variables
 // with defaults (light and dark theme by prefers-color-scheme). The service
-// can override the variables on :root or on dialog.skl itself.
+// can override the variables on :root or on dialog.skl itself. The values
+// mirror the lashin.su sheets (src/styles/global.css there): lashin.su is
+// the reference consumer and uses this very widget, so a change here is a
+// change of the reference look.
 export const STYLES = `
 .skl {
   --skl-bg: #f1f1f3;
@@ -12,7 +15,8 @@ export const STYLES = `
   --skl-primary-soft: rgba(50, 106, 251, 0.12);
   --skl-danger: #de3b3b;
   --skl-surface-high: #dfe3e7;
-  --skl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --skl-font: -apple-system, "Segoe UI", Roboto, sans-serif;
+  --skl-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   .skl:not([data-theme="light"]) {
@@ -51,6 +55,7 @@ dialog.skl[open] { animation: skl-in 220ms cubic-bezier(0.215, 0.61, 0.355, 1); 
 dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 @keyframes skl-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
 .skl-inner { padding: 12px 16px 16px; position: relative; }
+.skl-handle { display: none; width: 32px; height: 4px; border-radius: 2px; margin: 2px auto 10px; background: var(--skl-secondary); }
 .skl-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; min-height: 44px; }
 .skl.info .skl-bar { display: none; }
 .skl-close {
@@ -59,6 +64,7 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
   background: var(--skl-surface-high); color: var(--skl-text); cursor: pointer;
 }
 .skl-close svg { width: 22px; height: 22px; }
+.skl-close:hover { filter: brightness(1.08); }
 .skl-title { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skl-spacer { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 .skl-ttl { font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--skl-secondary); }
@@ -66,14 +72,18 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-body { padding-top: 12px; }
 .skl-secondary { color: var(--skl-secondary); }
 .skl-hint { margin: 4px 0 0; font-size: 0.9rem; line-height: 1.45; text-wrap: balance; }
-.skl-hint a { color: var(--skl-primary); text-decoration: none; white-space: nowrap; }
+.skl a:not(.skl-btn) { color: var(--skl-primary); text-decoration: none; }
+.skl a:not(.skl-btn):hover { text-decoration: underline; }
+.skl-hint a { white-space: nowrap; }
+.skl-intro { margin: 0 0 18px; padding-bottom: 16px; border-bottom: 1px solid var(--skl-separator); font-size: 0.95rem; line-height: 1.45; text-wrap: balance; }
+.skl-intro a { white-space: nowrap; }
 .skl-hint-icon { display: inline-block; width: 18px; height: 18px; margin: 0 0.15em; vertical-align: -0.25em; color: var(--skl-text); }
 .skl-qr {
   position: relative; display: block; width: 232px; height: 232px; margin: 18px auto 0;
   border-radius: 12px; background: #fff; padding: 10px; text-decoration: none;
 }
 .skl-qr svg { width: 100%; height: 100%; display: block; }
-.skl-qr-logo {
+.skl .skl-qr-logo {
   position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; padding: 5px; box-sizing: content-box;
   transform: translate(-50%, -50%); background: #fff; border-radius: 50%;
 }
@@ -89,12 +99,12 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 11px 20px; border-radius: 12px; border: 0; font: inherit; font-weight: 600; cursor: pointer;
-  text-decoration: none; background: var(--skl-primary); color: #fff; min-width: 232px;
+  text-decoration: none; background: var(--skl-primary); color: #fff;
 }
 .skl-btn:hover { filter: brightness(1.06); }
+.skl-action { min-width: 232px; }
 .skl-qr + .skl-btn { margin-top: 20px; }
 .skl-noapp { margin: 12px 0 0; font-size: 0.9rem; }
-.skl-noapp a { color: var(--skl-primary); }
 .skl-logo { display: block; position: relative; width: 56px; height: 56px; margin: 16px auto 20px; border-radius: 50%; }
 .skl-logo img { display: block; width: 100%; height: 100%; border-radius: 50%; }
 .skl-logo::after {
@@ -109,7 +119,7 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-field {
   font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--skl-separator);
   background: var(--skl-bg); color: var(--skl-text); width: 100%; letter-spacing: 0.15em; text-align: center;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--skl-mono);
 }
 .skl-field::placeholder { letter-spacing: normal; font-family: var(--skl-font); }
 .skl-field.error { border-color: var(--skl-danger); }
@@ -129,9 +139,13 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-expired-title { margin: 8px 0 18px; font-weight: 600; font-size: 1.1rem; }
 @keyframes skl-up { from { transform: translateY(100%); } to { transform: none; } }
 .skl-hidden { display: none !important; }
-@media (max-width: 520px) {
-  dialog.skl { width: 100%; max-width: none; margin: auto 0 0; border-radius: 16px 16px 0 0; max-height: 92vh; }
-  .skl-inner { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+@media (max-width: 599px) {
+  dialog.skl { width: 100%; max-width: none; margin: auto 0 0; border-radius: 16px 16px 0 0; box-shadow: none; }
+  dialog.skl[open] { animation-name: skl-up; }
+  .skl-inner { padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .skl-handle { display: block; }
+  .skl-action { width: 100%; }
+  .skl-expired-card { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 `;
 

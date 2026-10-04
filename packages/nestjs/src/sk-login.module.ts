@@ -20,7 +20,8 @@ import { SkLoginService } from './sk-login.service.js';
  *   })
  *
  * Routes under `routePrefix` (`api/sk` by default): init, login, status, code,
- * target. `SkLoginService` is exported for your own providers.
+ * target; with `dataRequest` also request/init, request/status, data.
+ * `SkLoginService` is exported for your own providers.
  */
 @Module({})
 export class SkLoginModule {

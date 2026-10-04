@@ -4,9 +4,11 @@ export { SkLoginService, type TargetInfo } from './sk-login.service.js';
 export {
   DEFAULT_ROUTE_PREFIX,
   SK_LOGIN_OPTIONS,
+  type DataRequestOptions,
   type HttpPair,
   type OnAuthenticated,
   type SkLoginModuleAsyncOptions,
   type SkLoginModuleOptions,
 } from './options.js';
-export type { AccessDecider, AccessDecision, PendingStore, Lang } from '@paymastech/sk-login-core';
+export { ownerKey } from '@paymastech/sk-login-core';
+export type { AccessDecider, AccessDecision, DataRequestStore, Kind, PendingStore, Lang } from '@paymastech/sk-login-core';

@@ -9,6 +9,7 @@
   button { font: inherit; padding: 10px 18px; border-radius: 10px; border: 0; background: #326afb; color: #fff; cursor: pointer; }
   code { background: #f1f1f3; padding: 2px 6px; border-radius: 6px; word-break: break-all; }
   .muted { color: #666; }
+  input { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid #ccc; }
   @media (prefers-color-scheme: dark) { body { background: #010102; color: #fafaff; } code { background: #2c2c30; } }
 </style>
 </head>
@@ -19,6 +20,16 @@
 <p class="muted">Target parameters for the app: <a href="/api/sk/target">/api/sk/target</a></p>
 <p id="result" class="muted"></p>
 
+<section id="form" hidden>
+  <h2>Card form</h2>
+  <p class="muted">A data request from the vault (protocol § 4.6): the app sends the record, the fields fill in.</p>
+  <p><button id="fill" type="button">Fill from Secret Keeper</button></p>
+  <p><label>Holder <input id="holder" autocomplete="off"></label></p>
+  <p><label>Card number <input id="pan" autocomplete="off"></label></p>
+  <p><label>Expiry <input id="exp" autocomplete="off" size="6"></label> <label>CVV <input id="cvv" autocomplete="off" size="4"></label></p>
+  <p id="filled" class="muted"></p>
+</section>
+
 <script src="/sk-login-widget.js"></script>
 <script>
   const who = document.getElementById('who');
@@ -27,6 +38,7 @@
   fetch('/me').then((r) => r.json()).then(({ user }) => {
     who.textContent = user ? 'You are signed in as ' + user.address : 'You are not signed in.';
     logout.hidden = !user;
+    document.getElementById('form').hidden = !user;
   });
   const login = SkLoginWidget.mountSkLogin({
     apiBase: '/api/sk',
@@ -39,6 +51,17 @@
     onCancelled: () => { result.textContent = 'Cancelled in the app'; },
   });
   document.getElementById('login').addEventListener('click', () => login.open());
+
+  const fill = SkLoginWidget.mountSkRequest({
+    apiBase: '/api/sk',
+    lang: 'en',
+    onFilled: ({ values, sender }) => {
+      for (const key of ['holder', 'pan', 'exp', 'cvv']) document.getElementById(key).value = values[key] ?? '';
+      document.getElementById('filled').textContent = 'Filled from ' + sender;
+    },
+    onCancelled: () => { document.getElementById('filled').textContent = 'Cancelled in the app'; },
+  });
+  document.getElementById('fill').addEventListener('click', () => fill.open('card-details'));
 </script>
 </body>
 </html>

@@ -3,7 +3,8 @@
 Server side of sign-in through Secret Keeper, independent of any HTTP
 framework: envelope cryptography, requests keyed by sid, a challenge with a
 6-digit code and browser context, code verification, the admission
-decision, the request store.
+decision, the request store. Also the data request (protocol § 4.6): a
+vault record for a form, `SkDataRequest`.
 
 Ready-made adapter for NestJS: [`@paymastech/sk-login-nestjs`](https://www.npmjs.com/package/@paymastech/sk-login-nestjs).
 For other frameworks an adapter is written on top of this package:
@@ -36,10 +37,31 @@ const { state, user, reason } = await sk.poll(sid);   // authenticated -> set a 
 const user = await sk.submitCode(sid, code);          // LoginError on a wrong code or a refusal
 ```
 
-Exports: `SkLogin`, `LoginError`, `MemoryPendingStore`, `PendingStore`
-(for Redis), `contextFromHeaders`, `describeContext`, `parseUserAgent`,
-`langFromAcceptLanguage`, `identityFromMnemonic`, `generateMnemonic`,
-`deriveIdentityKeys`, `keyCheckDigits`, `encryptEnvelope`, `decryptEnvelope`,
-`loginMeta`.
+Data request, the same shape:
+
+```ts
+import { SkDataRequest, ownerKey } from '@paymastech/sk-login-core';
+
+const data = new SkDataRequest({ identity, target: 'my-service', hub: 'auth_secretkeeper' });
+
+// POST request/init (browser, signed in): the owner is the page session, only it gets the values
+const init = await data.init('card-details', ownerKey(sessionToken), ctx);   // { sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs }
+
+// POST data (phone, text/plain): sk-data-request -> challenge envelope, sk-data / sk-data-cancel -> 204
+const r = await data.handleEnvelope(bodyText, lang);   // r.kind: 'challenge' | 'filled' | 'cancelled'
+
+// GET request/status (browser)
+const poll = await data.poll(sid, ownerKey(sessionToken));   // { state } | { state: 'filled', values, sender, filledAt }
+```
+
+`poll` returns the values once and wipes them; a sid asked by another owner
+answers `expired`.
+
+Exports: `SkLogin`, `SkDataRequest`, `LoginError`, `MemoryPendingStore`,
+`MemorySidStore`, `PendingStore`, `DataRequestStore`, `SidStore` (for Redis),
+`KINDS`, `isKind`, `ownerKey`, `contextFromHeaders`, `describeContext`,
+`parseUserAgent`, `langFromAcceptLanguage`, `identityFromMnemonic`,
+`generateMnemonic`, `deriveIdentityKeys`, `keyCheckDigits`, `encryptEnvelope`,
+`decryptEnvelope`, `loginMeta`, `requestMeta`, `payloadQuery`.
 
 Protocol, API and onboarding description: [repository README](https://github.com/paymastech/sk-login#readme).

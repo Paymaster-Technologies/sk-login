@@ -9,6 +9,9 @@ export interface Messages {
   /** The address is proven but there is no access. One text for all
    *  reasons: we do not tell the user who is on the list and who is blocked. */
   accessDenied: string;
+  /** Data request (§ 4.6): the app sent a record of another kind than the
+   *  QR asked for, or values outside the kind dictionary. */
+  kindMismatch: string;
   /** Request context (challenge v2). */
   from: string;
   ip: string;
@@ -19,6 +22,7 @@ export interface Messages {
 export const defaultMessages: Record<Lang, Messages> = {
   ru: {
     accessDenied: 'Вход подтверждён, доступ пока не открыт. Если вас здесь ждут, следующий вход пройдёт.',
+    kindMismatch: 'Сайт запрашивал другой тип данных. Обновите QR-код и попробуйте ещё раз.',
     from: 'Откуда',
     ip: 'IP-адрес',
     browser: 'Браузер',
@@ -26,6 +30,7 @@ export const defaultMessages: Record<Lang, Messages> = {
   },
   en: {
     accessDenied: 'Sign-in confirmed, but access is not open yet. If you are expected here, your next sign-in will go through.',
+    kindMismatch: 'The site asked for a different kind of data. Refresh the QR code and try again.',
     from: 'Location',
     ip: 'IP address',
     browser: 'Browser',

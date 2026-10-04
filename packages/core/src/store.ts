@@ -27,25 +27,29 @@ export interface Pending<User = unknown> {
   denied?: string;
 }
 
-export interface PendingStore<User = unknown> {
-  get(sid: string): Promise<Pending<User> | undefined>;
+/** Store keyed by sid; the same shape serves sign-in requests
+ *  (`PendingStore`) and data requests (`DataRequestStore` in request.ts). */
+export interface SidStore<Entry extends { sid: string }> {
+  get(sid: string): Promise<Entry | undefined>;
   /** `ttlMs` is how long until the record can be dropped (with a margin for polling). */
-  set(entry: Pending<User>, ttlMs: number): Promise<void>;
+  set(entry: Entry, ttlMs: number): Promise<void>;
   delete(sid: string): Promise<void>;
 }
 
+export type PendingStore<User = unknown> = SidStore<Pending<User>>;
+
 /** Process memory: expired records are swept on every access. */
-export class MemoryPendingStore<User = unknown> implements PendingStore<User> {
-  private readonly map = new Map<string, { entry: Pending<User>; dropAt: number }>();
+export class MemorySidStore<Entry extends { sid: string }> implements SidStore<Entry> {
+  private readonly map = new Map<string, { entry: Entry; dropAt: number }>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  async get(sid: string): Promise<Pending<User> | undefined> {
+  async get(sid: string): Promise<Entry | undefined> {
     this.sweep();
     return this.map.get(sid)?.entry;
   }
 
-  async set(entry: Pending<User>, ttlMs: number): Promise<void> {
+  async set(entry: Entry, ttlMs: number): Promise<void> {
     this.map.set(entry.sid, { entry, dropAt: this.now() + ttlMs });
   }
 
@@ -63,3 +67,5 @@ export class MemoryPendingStore<User = unknown> implements PendingStore<User> {
     for (const [sid, { dropAt }] of this.map) if (dropAt <= now) this.map.delete(sid);
   }
 }
+
+export class MemoryPendingStore<User = unknown> extends MemorySidStore<Pending<User>> {}

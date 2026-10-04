@@ -6,14 +6,23 @@ the app, the site receives their `sk1…` address and decides who to let
 in. The site's server and the app exchange encrypted envelopes; the site
 sees only the user's address.
 
+The same channel also fills forms from the user's vault (a data request):
+the site asks for a login and password, card details or personal data, the
+user picks a record in the app, and the values land in the form fields of
+the page that asked. See ["Data request"](#data-request).
+
+The reference consumer is [lashin.su](https://lashin.su): it runs on these
+packages (core on the server, the widget from the hub in the browser), so
+the popups there are what any site gets out of the box.
+
 The repository is a monorepo of three packages and an example:
 
 | Package | What it is |
 | --- | --- |
-| [`@paymastech/sk-login-core`](packages/core) | Framework-agnostic protocol: envelope cryptography, requests, challenge code, verification, request store. |
-| [`@paymastech/sk-login-nestjs`](packages/nestjs) | NestJS module: `SkLoginModule.forRoot(...)` mounts 5 routes and provides `SkLoginService`. |
-| [`@paymastech/sk-login-widget`](packages/widget) | Browser popup (QR, "with the app" button, waiting, manual code, refusal, timeout). No framework, ESM plus a single IIFE file. |
-| [`examples/nestjs-demo`](examples/nestjs-demo) | Working application: module + widget + cookie session, plus a phone emulation for development. |
+| [`@paymastech/sk-login-core`](packages/core) | Framework-agnostic protocol: envelope cryptography, sign-in requests (`SkLogin`), data requests (`SkDataRequest`), challenge code, verification, stores. |
+| [`@paymastech/sk-login-nestjs`](packages/nestjs) | NestJS module: `SkLoginModule.forRoot(...)` mounts the sign-in routes (and the data request routes when configured) and provides `SkLoginService`. |
+| [`@paymastech/sk-login-widget`](packages/widget) | Browser popups: sign-in (QR, "with the app" button, waiting, manual code, refusal, timeout) and "fill from Secret Keeper". No framework, ESM plus a single IIFE file. |
+| [`examples/nestjs-demo`](examples/nestjs-demo) | Working application: module + widget + cookie session + a card form filled from the vault, plus a phone emulation for development. |
 
 Adapters for other frameworks (Express, Fastify, Next.js, Koa) are built
 on top of `core` in a few dozen lines, see ["Other frameworks"](#other-frameworks).
@@ -33,8 +42,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.1.1
-npm i $R/paymastech-sk-login-core-0.1.1.tgz $R/paymastech-sk-login-nestjs-0.1.1.tgz $R/paymastech-sk-login-widget-0.1.1.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.2.0
+npm i $R/paymastech-sk-login-core-0.2.0.tgz $R/paymastech-sk-login-nestjs-0.2.0.tgz $R/paymastech-sk-login-widget-0.2.0.tgz
 ```
 
 ```ts
@@ -92,6 +101,65 @@ Or as a module: `import { mountSkLogin } from '@paymastech/sk-login-widget'`.
 The widget injects its own styles (`skl-` prefix, `--skl-*` variables), has
 light and dark themes, and becomes a bottom sheet on narrow screens.
 
+## Data request
+
+Besides signing in, a site can ask the app for a record from the user's
+vault (protocol § 4.6): a login and password for a site, card details,
+personal data. The flow mirrors the sign-in: the browser gets a QR, the app
+scans it, shows the request to the user, the user picks a record and
+confirms, the app sends the encrypted values to the site's server, and the
+browser receives them once over `request/status`. The server never stores
+the values beyond that single hand-over.
+
+Server side, in the module options:
+
+```ts
+SkLoginModule.forRoot<User>({
+  // ... sign-in options as above
+  // Who may ask: a request belongs to the page session that created it,
+  // and only that session gets the values back. Return undefined for 401.
+  dataRequest: {
+    owner: ({ req }) => {
+      const token = sessions.tokenFrom(req);
+      return token ? ownerKey(token) : undefined;   // ownerKey = sha256(token), base64url
+    },
+  },
+});
+```
+
+This adds `POST request/init` (`{ kind }`), `GET request/status?sid=` and
+the phone route `POST data` (`text/plain` envelopes `sk-data-request`,
+`sk-data`, `sk-data-cancel`); `GET target` gains `requestUrl`. Kinds and
+their fields:
+
+| Kind | Fields |
+| --- | --- |
+| `login-password` | `site`, `login`, `password` |
+| `card-details` | `holder`, `pan`, `exp`, `cvv`, `billingAddress` |
+| `personal-data` | `name`, `birthdate`, `phone`, `email`, `address` |
+
+Browser side, the second popup of the widget:
+
+```html
+<script>
+  const fill = SkLoginWidget.mountSkRequest({
+    apiBase: '/api/sk',
+    lang: 'en',
+    onFilled: ({ kind, values, sender }) => { form.pan.value = values.pan ?? ''; /* ... */ },
+    onCancelled: () => {},
+  });
+  document.getElementById('fill').onclick = () => fill.open('card-details');
+</script>
+```
+
+`GET request/status` answers `{ state: 'new' | 'challenged' | 'cancelled' | 'expired' }`
+or `{ state: 'filled', values, sender, filledAt }`; a second call after
+`filled` answers `expired` (the values were handed over once). Without a
+session (`owner` returned `undefined`) the browser routes answer `401
+{ error: 'unauthorized' }`; the widget then calls `onUnauthorized` (a page
+reload by default). In the hub mode the data request QR goes through the
+hub exactly like the sign-in one (`/request?...&target=<hub>&destination=<id>`).
+
 ## Onboarding a new service (checklist)
 
 The Secret Keeper app only sends envelopes to targets it knows. There are
@@ -143,7 +211,8 @@ inner one to your `login` URL and returns your reply unchanged. Your server
 sees exactly the same envelopes as in the direct mode, so the module does
 not change behavior; only the QR does.
 
-The hub also serves the browser widget, so you do not have to bundle it:
+The hub also serves the browser widget (both popups), so you do not have
+to bundle it:
 
 ```html
 <script src="https://auth.secretkeeper.net/widget.js"></script>
@@ -175,7 +244,17 @@ Service route: `target`.
 | `POST login` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
 | `GET status?sid=` | browser | | `{ state, reason?, ...extra }` where `state` is `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
 | `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied: true, reason, message }` or `4xx { error, message }` |
-| `GET target` | humans | | `{ id, hub?, v, url, serverAddress, checkDigits }` |
+| `GET target` | humans | | `{ id, hub?, v, url, requestUrl?, serverAddress, checkDigits }` |
+
+With `dataRequest` configured (see "Data request"):
+
+| Method and path | Caller | Request | Response |
+| --- | --- | --- | --- |
+| `POST request/init` | browser | `{ kind }` | `{ sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }`, `401 { error: 'unauthorized' }`, `400 { error: 'bad-kind' }` |
+| `POST data` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-data-request`), `204` (for `sk-data` and `sk-data-cancel`) or `4xx { error, message }` |
+| `GET request/status?sid=` | browser | | `{ state }` or `{ state: 'filled', values, sender, filledAt }` |
+
+Without `dataRequest` these routes answer `404 { error: 'not-configured' }`.
 
 `error` codes in replies to the app and the browser:
 
@@ -187,6 +266,7 @@ Service route: `target`.
 | `sid-expired` | 404 | the sid is not found or has expired (2 minutes by default) |
 | `code-invalid` | 400 / 410 | the code did not match; after 5 attempts the request is closed (410) |
 | `access-denied` | 403 | `access` returned `denied`; `reason` carries its reason |
+| `kind-mismatch` | 400 | (data request) the app sent a record of another kind than the one requested |
 
 Flow: the browser calls `init`, draws a QR with `payloadUrl`, polls
 `status` every 2 s. The app scans the QR, sends an `sk-login` envelope to
@@ -220,6 +300,7 @@ request is marked `used`, and further `status` calls for this sid answer
 | `messages` | ru/en | override texts (e.g. `accessDenied`) |
 | `qr` | `true` | include `qrSvg` in `init` |
 | `maxBodyBytes` | 16 KiB | envelope body limit |
+| `dataRequest` | off | data requests: `{ owner({ req, res }), store?, ttlMs?, maxBodyBytes? (64 KiB) }`, see "Data request" |
 | `routePrefix` | `api/sk` | route prefix |
 
 `forRootAsync({ imports, inject, useFactory, routePrefix })` for
@@ -244,7 +325,9 @@ interface PendingStore<User> {
 
 `Pending` is a flat JSON-serializable object (`sid`, `state`, `createdAt`,
 `expiresAt`, `ctx`, `sender`, `code`, `codeAttempts`, `user`, `denied`);
-`set` can be implemented as `SET sid json PX ttlMs`.
+`set` can be implemented as `SET sid json PX ttlMs`. Data requests use the
+same shape of store (`DataRequestStore = SidStore<DataPending>`), passed as
+`dataRequest.store`.
 
 ## Other frameworks
 
@@ -282,7 +365,7 @@ DEMO_FAKE_PHONE=1 npm run demo   # plus POST /demo/phone?sid=… instead of a ph
 ```
 
 The envelope cryptography (`packages/core/src/crypto`) is synced from the
-`lashin.su` site implementation with `npm run sync-sk-crypto`; the source
+Secret Keeper browser extension with `npm run sync-sk-crypto`; the source
 revision is recorded in `SYNCED_FROM`.
 
 ## License

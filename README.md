@@ -188,9 +188,8 @@ Steps for the hub mode:
    (your `login` endpoint), `serverAddress` (`sk1…`), `checkDigits` for
    verification by voice and `ownerHash` (the hash of `owner`; the address
    itself is not published).
-4. Open the hub catalog (`https://auth.secretkeeper.net/catalog/my`), sign in
-   with the phone whose address you put into `owner`, and submit the URL of
-   your service. The catalog fetches `GET target`, checks that `ownerHash`
+4. Open the hub (`https://auth.secretkeeper.net/`), sign in with the phone
+   whose address you put into `owner`, and submit the URL of your service. The catalog fetches `GET target`, checks that `ownerHash`
    matches the signed-in address and that `hub` names this hub, and creates
    the registry entry. From that moment the sign-in works with the released
    app; the app shows your host name until the hub owner approves the

@@ -78,7 +78,8 @@ export interface SkRequestWidget {
   open(kind: string): void;
   close(): void;
   destroy(): void;
-  readonly element: HTMLDialogElement;
+  /** The dialog, or the inline root when `container` is set. */
+  readonly element: HTMLElement;
 }
 
 type Poll =
@@ -189,24 +190,24 @@ export function mountSkRequest(options: SkRequestWidgetOptions): SkRequestWidget
       if (r.status === 401) return unauthorized();
       if (!r.ok) throw new Error(String(r.status));
       const init = (await r.json()) as RequestInitResponse;
-      if (mine !== generation || !sheet.dialog.open) return;
+      if (mine !== generation || !sheet.isOpen()) return;
       sid = init.sid;
       sheet.showQr(init);
       pollTimer = window.setInterval(tick, sheet.pollMs);
     } catch {
-      if (mine === generation && sheet.dialog.open) sheet.expire('offline');
+      if (mine === generation && sheet.isOpen()) sheet.expire('offline');
     }
   };
   sheet.onRefresh(start);
 
   return {
     open(next: string) {
-      if (sheet.dialog.open) return;
+      if (sheet.isOpen()) return;
       kind = next;
       sheet.open();
     },
     close: sheet.close,
     destroy: sheet.destroy,
-    element: sheet.dialog,
+    element: sheet.root,
   };
 }

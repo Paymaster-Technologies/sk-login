@@ -5,6 +5,11 @@
 // "Refresh", the "app did not open" hint and the final info views. The
 // owner (login.ts, request.ts) supplies the flow-specific views, the init
 // request and the status polling.
+//
+// With `container` the same sheet is rendered inline into the given element
+// instead of a modal dialog (a second factor page, a sign-in card): no
+// backdrop, no close button, no Esc; "Close" on the final views becomes
+// "Try again".
 
 import { SK_LOGO } from './logo.js';
 import { ensureStyles } from './styles.js';
@@ -25,6 +30,8 @@ export interface SheetTexts {
   expired: string;
   offline: string;
   refresh: string;
+  /** The button on the final views in the inline mode (there is nothing to close). */
+  retry: string;
 }
 
 export const sheetTexts: Record<Lang, SheetTexts> = {
@@ -41,6 +48,7 @@ export const sheetTexts: Record<Lang, SheetTexts> = {
     expired: 'QR-код устарел',
     offline: 'Нет связи с сайтом',
     refresh: 'Обновить',
+    retry: 'Попробовать снова',
   },
   en: {
     close: 'Close',
@@ -55,6 +63,7 @@ export const sheetTexts: Record<Lang, SheetTexts> = {
     expired: 'The QR code has expired',
     offline: 'Could not reach the site',
     refresh: 'Refresh',
+    retry: 'Try again',
   },
 };
 
@@ -77,6 +86,8 @@ export interface SheetOptions {
   credentials?: RequestCredentials;
   /** Polling interval, ms. */
   pollMs?: number;
+  /** Render inline into this element instead of a modal dialog. */
+  container?: HTMLElement;
 }
 
 /** What `init` returns for the QR block (both flows). */
@@ -95,12 +106,16 @@ export interface SheetConfig {
   action: string;
   /** HTML before the scan hint (the data request intro); has `data-r="intro"`. */
   intro?: string;
+  /** HTML after the app button on the scan view (a recovery link). */
+  footer?: string;
   /** HTML of the `challenged` view; gets the resolved logo URL. */
   challenged: (logo: string) => string;
-  /** Extra final views (the sign-in refusal); each a `<section data-view=… class="skl-hidden skl-info">`. */
-  extraViews?: string;
+  /** Extra views; each a `<section data-view=…>`. A function gets the resolved logo URL. */
+  extraViews?: string | ((logo: string) => string);
   /** Views shown as an info sheet (no bar): the common cancelled and timeout plus the owner's. */
   infoViews?: string[];
+  /** Views that keep the bar but not the countdown (the request is past its TTL stage). */
+  noTtlViews?: string[];
 }
 
 export type ExpireReason = 'expired' | 'offline';
@@ -117,15 +132,16 @@ export const ICON = (body: string, cls = '') =>
   `<svg class="skl-info-icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 export const CANCEL_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>');
 export const CLOCK_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>');
+export const ERROR_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 15.5v.5"/>', 'danger');
 
 export function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
 /** The waiting view: the logo in a spinning ring plus a lead. */
-export function waitingHtml(logo: string, lead: string, extra = ''): string {
+export function waitingHtml(logo: string, lead: string, extra = '', leadRef?: string): string {
   return `<span class="skl-logo"><img src="${esc(logo)}" alt="Secret Keeper" width="56" height="56"></span>
-      <p class="skl-secondary skl-lead">${esc(lead)}</p>${extra}`;
+      <p class="skl-secondary skl-lead"${leadRef ? ` data-r="${leadRef}"` : ''}>${esc(lead)}</p>${extra}`;
 }
 
 export function infoViewHtml(name: string, icon: string, text: string, close: string, textRef?: string): string {
@@ -137,7 +153,10 @@ export function infoViewHtml(name: string, icon: string, text: string, close: st
 }
 
 export interface Sheet {
-  dialog: HTMLDialogElement;
+  /** The dialog, or the inline root when `container` is set. */
+  root: HTMLElement;
+  /** Inline mode (`container`). */
+  inline: boolean;
   uid: string;
   api: string;
   logo: string;
@@ -148,7 +167,8 @@ export interface Sheet {
   current(): string;
   show(view: string): void;
   /** A final view instead of the waiting one: the window closes and opens
-   *  again with its own appearance animation, not a swap under the same title. */
+   *  again with its own appearance animation, not a swap under the same title.
+   *  Inline: a plain view switch. */
   reopen(view: string): void;
   /** New request: the QR slot shows a spinner, the scan view is shown. */
   loading(): void;
@@ -160,17 +180,23 @@ export interface Sheet {
   /** Half the TTL has passed without an answer. */
   late(): boolean;
   isExpired(): boolean;
+  isOpen(): boolean;
   /** The code expired or the server is unreachable: the nested sheet with
    *  "Refresh". If the TTL ran out after the scan, the final "timeout" view. */
   expire(reason?: ExpireReason): void;
   /** Stop timers (polling is the owner's; it is stopped via `onStop`). */
   stop(): void;
   open(): void;
+  /** Close (dialog) or hide (inline). Ignored while locked; `destroy` is not. */
   close(): void;
+  /** While locked the sheet ignores close: the close button, Esc, the scrim and `close()`. */
+  lock(on: boolean): void;
   destroy(): void;
   /** The owner's polling loop and request start. */
   onRefresh(cb: () => void): void;
   onStop(cb: () => void): void;
+  /** Called on every close that goes through (before the sheet closes). */
+  onBeforeClose(cb: () => void): void;
 }
 
 export function createSheet(cfg: SheetConfig): Sheet {
@@ -183,12 +209,16 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const pollMs = options.pollMs ?? 2000;
   const uid = `skl${Math.random().toString(36).slice(2, 8)}`;
   const infoViews = new Set(['cancelled', 'timeout', ...(cfg.infoViews ?? [])]);
+  const noTtlViews = new Set(cfg.noTtlViews ?? []);
+  const inline = !!options.container;
 
-  const dialog = doc.createElement('dialog');
-  dialog.className = 'skl';
-  if (options.theme) dialog.dataset.theme = options.theme;
-  dialog.setAttribute('aria-labelledby', `${uid}-title`);
-  dialog.innerHTML = `
+  const dialog = inline ? null : doc.createElement('dialog');
+  const root: HTMLElement = dialog ?? doc.createElement('div');
+  root.className = inline ? 'skl skl-inline skl-hidden' : 'skl';
+  if (options.theme) root.dataset.theme = options.theme;
+  root.setAttribute('aria-labelledby', `${uid}-title`);
+  if (inline) root.setAttribute('role', 'group');
+  root.innerHTML = `
 <div class="skl-inner">
   <div class="skl-handle" aria-hidden="true"></div>
   <div class="skl-bar">
@@ -209,11 +239,12 @@ export function createSheet(cfg: SheetConfig): Sheet {
       </a>
       <a class="skl-btn skl-action" href="#" data-r="open">${esc(cfg.action)}</a>
       <p class="skl-secondary skl-noapp skl-hidden" data-r="noapp">${esc(t.noapp1)}<a href="${esc(skSite)}" target="_blank" rel="noopener">${esc(t.noappLink)}</a></p>
+      ${cfg.footer ?? ''}
     </section>
     <section data-view="challenged" class="skl-hidden">
       ${cfg.challenged(logo)}
     </section>
-    ${cfg.extraViews ?? ''}
+    ${typeof cfg.extraViews === 'function' ? cfg.extraViews(logo) : (cfg.extraViews ?? '')}
     ${infoViewHtml('cancelled', CANCEL_ICON, t.cancelled, t.close)}
     ${infoViewHtml('timeout', CLOCK_ICON, t.timeout, t.close)}
   </div>
@@ -225,10 +256,10 @@ export function createSheet(cfg: SheetConfig): Sheet {
     </div>
   </div>
 </div>`;
-  doc.body.appendChild(dialog);
+  (options.container ?? doc.body).appendChild(root);
 
-  const el = <T extends HTMLElement = HTMLElement>(r: string) => dialog.querySelector<T>(`[data-r="${r}"]`)!;
-  const views = Array.from(dialog.querySelectorAll<HTMLElement>('[data-view]'));
+  const el = <T extends HTMLElement = HTMLElement>(r: string) => root.querySelector<T>(`[data-r="${r}"]`)!;
+  const views = Array.from(root.querySelectorAll<HTMLElement>('[data-view]'));
   const qr = el('qr');
   const qrLink = el<HTMLAnchorElement>('qr-link');
   const openApp = el<HTMLAnchorElement>('open');
@@ -236,6 +267,8 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const ttl = el('ttl');
   const expired = el('expired');
   const expiredTitle = el('expired-title');
+  // Inline: the final views offer a new attempt instead of closing.
+  if (inline) for (const b of root.querySelectorAll<HTMLElement>('.skl-info [data-r="close"]')) b.textContent = t.retry;
 
   let current = 'scan';
   let ttlTimer: number | undefined;
@@ -243,16 +276,20 @@ export function createSheet(cfg: SheetConfig): Sheet {
   let startedAt = 0;
   let ttlMs = 0;
   let pendingOpen = false;
+  let inlineOpen = false;
+  let locked = false;
   let refresh: () => void = () => {};
   let stopOwner: () => void = () => {};
+  let beforeClose: () => void = () => {};
 
+  const isOpen = () => (dialog ? dialog.open : inlineOpen);
   const loading = () => qrLink.classList.contains('loading');
   const isExpired = () => !expired.classList.contains('skl-hidden');
   const alive = () => Date.now() - startedAt <= ttlMs;
   const late = () => Date.now() - startedAt >= ttlMs / 2;
 
   const syncTtl = () => {
-    ttl.classList.toggle('skl-hidden', infoViews.has(current) || loading() || isExpired());
+    ttl.classList.toggle('skl-hidden', infoViews.has(current) || noTtlViews.has(current) || loading() || isExpired());
   };
   const drawTtl = () => {
     const left = Math.max(0, ttlMs - (Date.now() - startedAt));
@@ -274,9 +311,9 @@ export function createSheet(cfg: SheetConfig): Sheet {
     // an icon, a text and "Close". The button is not focused: Chrome draws
     // a ring on it, and Esc and the scrim close the window anyway.
     const info = infoViews.has(name);
-    dialog.classList.toggle('info', info);
+    root.classList.toggle('info', info);
     syncTtl();
-    if (info) (doc.activeElement as HTMLElement | null)?.blur();
+    if (info && !inline) (doc.activeElement as HTMLElement | null)?.blur();
   };
 
   const cancelWatchOpen = () => {
@@ -309,10 +346,21 @@ export function createSheet(cfg: SheetConfig): Sheet {
     cancelWatchOpen();
   };
 
+  const closed = () => {
+    stop();
+    // The browser returns focus to the opener and after Esc draws a ring on it.
+    if (!inline) (doc.activeElement as HTMLElement | null)?.blur();
+    options.onClose?.();
+  };
+
   const reopen = (name: string) => {
-    if (dialog.open) dialog.close();
-    show(name);
-    dialog.showModal();
+    if (dialog) {
+      if (dialog.open) dialog.close();
+      show(name);
+      dialog.showModal();
+    } else {
+      show(name);
+    }
   };
 
   const expire = (reason: ExpireReason = 'expired') => {
@@ -347,11 +395,28 @@ export function createSheet(cfg: SheetConfig): Sheet {
   };
 
   const open = () => {
-    if (dialog.open) return;
-    dialog.showModal();
+    if (isOpen()) return;
+    if (dialog) dialog.showModal();
+    else {
+      inlineOpen = true;
+      root.classList.remove('skl-hidden');
+    }
     refresh();
   };
-  const close = () => dialog.close();
+  const close = () => {
+    if (locked || !isOpen()) return;
+    beforeClose();
+    if (dialog) {
+      // The dialog's close event calls closed().
+      dialog.close();
+    } else {
+      inlineOpen = false;
+      root.classList.add('skl-hidden');
+      closed();
+    }
+  };
+  // Inline: "Try again" on a final view is a new request, not a close.
+  const infoButton = () => (inline ? refresh() : close());
 
   openApp.addEventListener('click', (e) => {
     if (loading()) {
@@ -365,22 +430,25 @@ export function createSheet(cfg: SheetConfig): Sheet {
   qrLink.addEventListener('click', (e) => {
     if (loading()) e.preventDefault();
   });
-  for (const b of dialog.querySelectorAll<HTMLElement>('[data-r="close"]')) b.addEventListener('click', close);
+  el('close').addEventListener('click', close);
+  for (const b of root.querySelectorAll<HTMLElement>('.skl-info [data-r="close"]')) b.addEventListener('click', infoButton);
   el('refresh').addEventListener('click', () => refresh());
-  // Click on the scrim: inside .skl-inner the target is a descendant, outside it is the dialog itself.
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) close();
-  });
-  dialog.addEventListener('close', () => {
-    stop();
-    // The browser returns focus to the opener and after Esc draws a ring on it.
-    (doc.activeElement as HTMLElement | null)?.blur();
-    options.onClose?.();
-  });
+  if (dialog) {
+    // Click on the scrim: inside .skl-inner the target is a descendant, outside it is the dialog itself.
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) close();
+    });
+    // Esc in browsers that fire cancel before our keydown handler: route it through close() (the lock).
+    dialog.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      close();
+    });
+    dialog.addEventListener('close', closed);
+  }
   const onKey = (e: KeyboardEvent) => {
-    if (!dialog.open) return;
+    if (!isOpen()) return;
     // Esc closes natively too (the cancel event), but not in every browser wrapper.
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' && !inline) {
       e.preventDefault();
       close();
       return;
@@ -390,7 +458,8 @@ export function createSheet(cfg: SheetConfig): Sheet {
     // links and other buttons (e.g. "Refresh") handle Enter themselves.
     if (e.key === 'Enter' && current === 'scan' && !isExpired()) {
       const tgt = e.target as HTMLElement;
-      if (dialog.contains(tgt) && tgt !== el('close') && tgt.closest('button, input, textarea, a')) return;
+      if (inline && !root.contains(tgt)) return;
+      if (root.contains(tgt) && tgt !== el('close') && tgt.closest('button, input, textarea, a')) return;
       e.preventDefault();
       openApp.click();
     }
@@ -399,7 +468,8 @@ export function createSheet(cfg: SheetConfig): Sheet {
   window.addEventListener('pagehide', stop);
 
   return {
-    dialog,
+    root,
+    inline,
     uid,
     api,
     logo,
@@ -420,22 +490,29 @@ export function createSheet(cfg: SheetConfig): Sheet {
     alive,
     late,
     isExpired,
+    isOpen,
     expire,
     stop,
     open,
     close,
+    lock: (on) => {
+      locked = on;
+    },
     destroy() {
       stop();
       doc.removeEventListener('keydown', onKey);
       window.removeEventListener('pagehide', stop);
-      if (dialog.open) dialog.close();
-      dialog.remove();
+      if (dialog?.open) dialog.close();
+      root.remove();
     },
     onRefresh: (cb) => {
       refresh = cb;
     },
     onStop: (cb) => {
       stopOwner = cb;
+    },
+    onBeforeClose: (cb) => {
+      beforeClose = cb;
     },
   };
 }

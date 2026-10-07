@@ -4,8 +4,17 @@
 //
 //   const login = mountSkLogin({ apiBase: '/api/sk', onSuccess: () => location.reload() });
 //   button.addEventListener('click', () => login.open());
+//
+// Beyond the module's routes: `transport` replaces the built-in fetch calls
+// (own routes and response formats), `complete` finishes the sign-in on the
+// server after `authenticated` (a second factor that binds the browser and
+// issues the session), `manualCode: false` hides the code entry,
+// `transport.cancel` tells the server when the person gives up,
+// `recoveryLink` adds "No access to Secret Keeper?" under the QR, and
+// `container` renders the sheet inline instead of a modal dialog.
 
 import {
+  ERROR_ICON,
   ICON,
   type Lang,
   type QrInit,
@@ -28,6 +37,10 @@ export interface Texts extends SheetTexts {
   submit: string;
   wrong: string;
   denied: string;
+  /** The waiting view while `complete` runs. */
+  completing: string;
+  /** `complete` failed and the error has no message of its own. */
+  completeFailed: string;
 }
 
 export const texts: Record<Lang, Texts> = {
@@ -43,6 +56,8 @@ export const texts: Record<Lang, Texts> = {
     wrong: 'Код не подошёл',
     denied: 'Вход подтверждён, доступ пока не открыт. Если вас здесь ждут, следующий вход пройдёт.',
     timeout: 'Время ожидания истекло: подтверждение из Secret Keeper не пришло. Попробуйте войти ещё раз.',
+    completing: 'Завершаем вход…',
+    completeFailed: 'Не удалось завершить вход. Попробуйте ещё раз.',
   },
   en: {
     ...sheetTexts.en,
@@ -56,6 +71,8 @@ export const texts: Record<Lang, Texts> = {
     wrong: 'That code did not match',
     denied: 'Sign-in confirmed, but access is not open yet. If you are expected here, your next sign-in will go through.',
     timeout: 'Time ran out: no confirmation came from Secret Keeper. Try signing in again.',
+    completing: 'Finishing the sign-in…',
+    completeFailed: 'Could not finish the sign-in. Please try again.',
   },
 };
 
@@ -64,29 +81,139 @@ export interface InitResponse extends QrInit {
   payloadUrl: string;
 }
 
+/** The module's `GET status` response: the state plus whatever `onAuthenticated` merged in. */
+export interface StatusResponse {
+  state: 'new' | 'challenged' | 'authenticated' | 'denied' | 'cancelled' | 'expired' | (string & {});
+  /** For `denied`: the reason from `access`. */
+  reason?: string;
+  message?: string;
+  [extra: string]: unknown;
+}
+
+/** What a manual code submission came to. */
+export type CodeResult =
+  /** Signed in; `extra` is what the server returned alongside (a token, a user). */
+  | { kind: 'ok'; extra?: Record<string, unknown> }
+  /** The code did not match: the field is emptied, the person tries again. */
+  | { kind: 'wrong' }
+  /** The address is proven but there is no access. */
+  | { kind: 'denied'; reason?: string; message?: string }
+  /** The request is unknown, expired or out of attempts: the "QR expired" sheet. */
+  | { kind: 'stale' };
+
+/**
+ * How the widget talks to the server. The default one calls the module's
+ * routes under `apiBase`; a service with its own routes and response
+ * formats supplies its own. A rejected promise from `init` or `submitCode`
+ * is shown as "could not reach the site"; from `status` it is ignored and
+ * the next poll retries.
+ */
+export interface SkLoginTransport {
+  /** A new sign-in request: sid, QR and links. */
+  init(): Promise<InitResponse>;
+  /** The state of the request. */
+  status(sid: string): Promise<StatusResponse>;
+  /** The code the app showed to the person. Without it the code entry is not offered. */
+  submitCode?(sid: string, code: string): Promise<CodeResult>;
+  /** The person closed the widget before the sign-in finished: tell the server. */
+  cancel?(sid: string): Promise<void>;
+}
+
+export interface RecoveryLink {
+  /** The link text, e.g. "No access to Secret Keeper?". */
+  text: string;
+  /** Where it leads; with `onClick` only, the link stays on the page. */
+  href?: string;
+  onClick?: () => void;
+}
+
 export interface SkLoginWidgetOptions extends SheetOptions {
   /** Text overrides. */
   texts?: Partial<Texts>;
-  /** Sign-in succeeded: `extra` holds the fields the server's `onAuthenticated` merged into the reply (e.g. token). */
+  /** Sign-in succeeded: `extra` holds the fields the server's `onAuthenticated` merged into the reply (e.g. token),
+   *  plus what `complete` returned, if it is set. */
   onSuccess: (extra: Record<string, unknown>) => void;
   /** The address is proven but there is no access. `message` is the server's text, if it sent one. */
   onDenied?: (reason: string | undefined, message: string | undefined) => void;
+  /** Own server calls instead of the module's routes under `apiBase`. */
+  transport?: SkLoginTransport;
+  /**
+   * Finish the sign-in on the server once the request is `authenticated`
+   * (check the browser binding, issue the session). The widget shows a
+   * waiting view meanwhile, does not close and does not call it twice;
+   * `onSuccess` fires only after it resolves. A rejection is shown as an
+   * error view with the error's message (`completeFailed` when it has none)
+   * and is not retried.
+   */
+  complete?: (sid: string, extra: Record<string, unknown>) => Promise<Record<string, unknown> | void>;
+  /** `complete` rejected; the error is already on the screen. */
+  onCompleteError?: (error: unknown) => void;
+  /** `transport.cancel` rejected (the sheet is already closed). Logged to the console when unset. */
+  onCancelError?: (error: unknown) => void;
+  /** Offer the manual code entry after the scan. Default `true`; forced off without `transport.submitCode`. */
+  manualCode?: boolean;
+  /** A link under the QR, e.g. "No access to Secret Keeper?". */
+  recoveryLink?: RecoveryLink;
+  /** Inline mode (`container`): request the QR right away on mount. Default `true`. */
+  autoStart?: boolean;
 }
 
 export interface SkLoginWidget {
   open(): void;
   close(): void;
   destroy(): void;
-  readonly element: HTMLDialogElement;
+  /** The dialog, or the inline root when `container` is set. */
+  readonly element: HTMLElement;
+}
+
+/** The module's routes under `apiBase` (`init`, `status`, `code`); the widget's default transport. */
+export function httpTransport(apiBase: string, fetchOpts: (init?: RequestInit) => RequestInit): SkLoginTransport {
+  const api = apiBase.replace(/\/$/, '');
+  return {
+    async init() {
+      const r = await fetch(`${api}/init`, fetchOpts({ method: 'POST' }));
+      if (!r.ok) throw new Error(String(r.status));
+      return (await r.json()) as InitResponse;
+    },
+    async status(sid) {
+      const r = await fetch(`${api}/status?sid=${encodeURIComponent(sid)}`, fetchOpts());
+      return (await r.json()) as StatusResponse;
+    },
+    async submitCode(sid, code) {
+      const r = await fetch(
+        `${api}/code`,
+        fetchOpts({
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sid, code }),
+        }),
+      );
+      if (r.ok) {
+        const { ok: _ok, ...extra } = (await r.json()) as Record<string, unknown>;
+        return { kind: 'ok', extra };
+      }
+      if (r.status === 403) {
+        const body = (await r.json().catch(() => ({}))) as { reason?: string; message?: string };
+        return { kind: 'denied', reason: body.reason, message: body.message };
+      }
+      if (r.status === 400) return { kind: 'wrong' };
+      // 404/409/410: the request is stale or the attempts are exhausted.
+      return { kind: 'stale' };
+    },
+  };
 }
 
 export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   const t: Texts = { ...texts[options.lang ?? 'ru'], ...options.texts };
+  const recovery = options.recoveryLink;
   const sheet = createSheet({
     options,
     texts: t,
     title: t.title,
     action: t.open,
+    footer: recovery
+      ? `<p class="skl-secondary skl-recovery"><a data-r="recovery" href="${esc(recovery.href ?? '#')}">${esc(recovery.text)}</a></p>`
+      : '',
     // The code field opens from a link in the text: it is needed only when
     // the app showed the code to the person (its POST failed), a rare case,
     // so the hint appears only after half the TTL without confirmation.
@@ -104,28 +231,37 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
         <button class="skl-btn" type="button" data-r="code-submit">${esc(t.submit)}</button>
       </div>`,
       ),
-    extraViews: infoViewHtml(
-      'denied',
-      ICON(
-        '<rect x="4" y="10.5" width="16" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="currentColor" stroke="none"/>',
-        'danger',
-      ),
-      t.denied,
-      t.close,
-      'denied-text',
-    ),
-    infoViews: ['denied'],
+    extraViews: (logo) =>
+      `<section data-view="completing" class="skl-hidden">${waitingHtml(logo, t.completing)}</section>` +
+      infoViewHtml(
+        'denied',
+        ICON(
+          '<rect x="4" y="10.5" width="16" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.2" fill="currentColor" stroke="none"/>',
+          'danger',
+        ),
+        t.denied,
+        t.close,
+        'denied-text',
+      ) +
+      infoViewHtml('failed', ERROR_ICON, t.completeFailed, t.close, 'failed-text'),
+    infoViews: ['denied', 'failed'],
+    noTtlViews: ['completing'],
   });
+  const transport = options.transport ?? httpTransport(sheet.api, sheet.fetchOpts);
+  const manualCode = options.manualCode !== false && typeof transport.submitCode === 'function';
   const codeInput = sheet.el<HTMLInputElement>('code');
   const codeForm = sheet.el('code-form');
   const codeHint = sheet.el('code-hint');
   const deniedText = sheet.el('denied-text');
+  const failedText = sheet.el('failed-text');
   codeInput.id = `${sheet.uid}-code`;
   sheet.el('code-label').setAttribute('for', codeInput.id);
 
   let sid = '';
   let pollTimer: number | undefined;
   let generation = 0;
+  /** The request reached `authenticated`: no cancel, no second completion. */
+  let finishing = false;
 
   const stopPoll = () => {
     if (pollTimer) window.clearInterval(pollTimer);
@@ -133,13 +269,41 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   };
   sheet.onStop(stopPoll);
 
-  const finish = (extra: Record<string, unknown>) => {
+  const finish = async (extra: Record<string, unknown>) => {
+    if (finishing) return;
+    finishing = true;
+    stopPoll();
+    if (!options.complete) {
+      sheet.stop();
+      sheet.close();
+      options.onSuccess(extra);
+      return;
+    }
+    // The server finishes the sign-in (binding, session): wait on the
+    // screen, do not let the sheet close meanwhile.
+    sheet.lock(true);
     sheet.stop();
-    sheet.close();
-    options.onSuccess(extra);
+    sheet.show('completing');
+    const mine = generation;
+    try {
+      const more = await options.complete(sid, extra);
+      sheet.lock(false);
+      if (mine !== generation) return;
+      sheet.stop();
+      sheet.close();
+      options.onSuccess({ ...extra, ...(more ?? {}) });
+    } catch (e) {
+      sheet.lock(false);
+      if (mine !== generation) return;
+      sheet.stop();
+      failedText.textContent = (e instanceof Error && e.message) || t.completeFailed;
+      sheet.reopen('failed');
+      options.onCompleteError?.(e);
+    }
   };
   // The address is proven but there is no access: one text, the reason stays in the protocol.
   const deny = (reason?: string, message?: string) => {
+    finishing = true;
     sheet.stop();
     deniedText.textContent = message || t.denied;
     sheet.show('denied');
@@ -147,6 +311,7 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   };
   // "Cancel" in the app: the server received sk-login-cancel.
   const cancelled = () => {
+    sid = '';
     sheet.stop();
     sheet.reopen('cancelled');
     options.onCancelled?.();
@@ -154,16 +319,20 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
 
   const tick = async () => {
     if (!sheet.alive()) return sheet.expire();
+    const mine = generation;
     try {
-      const r = await fetch(`${sheet.api}/status?sid=${encodeURIComponent(sid)}`, sheet.fetchOpts());
-      const body = (await r.json()) as { state: string; reason?: string } & Record<string, unknown>;
+      const body = await transport.status(sid);
       // While we waited, polling may have been stopped (code entry, close,
       // a new request): the answer is about a stale sid, leave the screen alone.
-      if (!pollTimer) return;
-      const { state, reason, ...extra } = body;
+      if (!pollTimer || mine !== generation) return;
+      const { state, reason, message, ...extra } = body;
       if (state === 'authenticated') return finish(extra);
-      if (state === 'denied') return deny(reason);
-      if (state === 'expired') return sheet.expire();
+      if (state === 'denied') return deny(reason, message);
+      if (state === 'expired') {
+        // The server already forgot the request: nothing to cancel on close.
+        sid = '';
+        return sheet.expire();
+      }
       if (state === 'cancelled') return cancelled();
       // The code field only after the first envelope from the app: before that nobody has a code.
       if (state === 'challenged') {
@@ -172,7 +341,7 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
           sheet.renew();
           codeHint.classList.add('skl-hidden');
           sheet.show('challenged');
-        } else if (sheet.late()) {
+        } else if (manualCode && sheet.late()) {
           // Half a minute without confirmation: something went wrong, offer manual code entry.
           codeHint.classList.remove('skl-hidden');
         }
@@ -193,58 +362,65 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   const start = async () => {
     sheet.stop();
     const mine = ++generation;
+    sid = '';
+    finishing = false;
     codeInput.value = '';
     clearCodeError();
     codeForm.classList.add('skl-hidden');
     sheet.loading();
     try {
-      const r = await fetch(`${sheet.api}/init`, sheet.fetchOpts({ method: 'POST' }));
-      if (!r.ok) throw new Error(String(r.status));
-      const init = (await r.json()) as InitResponse;
+      const init = await transport.init();
       // While we waited, the popup was closed or a new request was made.
-      if (mine !== generation || !sheet.dialog.open) return;
+      if (mine !== generation || !sheet.isOpen()) return;
       sid = init.sid;
       sheet.showQr(init);
       pollTimer = window.setInterval(tick, sheet.pollMs);
     } catch {
-      if (mine === generation && sheet.dialog.open) sheet.expire('offline');
+      if (mine === generation && sheet.isOpen()) sheet.expire('offline');
     }
   };
   sheet.onRefresh(start);
 
+  // The person closed the sheet with a request in flight: the server is told
+  // (when the transport knows how), the late answers are ignored. After
+  // `authenticated` nothing is cancelled: the sign-in already happened.
+  sheet.onBeforeClose(() => {
+    const current = sid;
+    sid = '';
+    if (!current || finishing) return;
+    generation++;
+    stopPoll();
+    transport.cancel?.(current).catch((e) => {
+      if (options.onCancelError) options.onCancelError(e);
+      else console.warn('[sk-login-widget] cancel failed', e);
+    });
+  });
+
   const submitCode = async () => {
     const code = codeInput.value.trim();
     if (!code) return codeInput.focus();
-    let r: Response;
+    const mine = generation;
+    let result: CodeResult;
     try {
-      r = await fetch(
-        `${sheet.api}/code`,
-        sheet.fetchOpts({
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sid, code }),
-        }),
-      );
+      result = await transport.submitCode!(sid, code);
     } catch {
       return sheet.expire('offline');
     }
-    if (r.ok) {
-      const { ok: _ok, ...extra } = (await r.json()) as Record<string, unknown>;
-      return finish(extra);
+    if (mine !== generation) return;
+    switch (result.kind) {
+      case 'ok':
+        return finish(result.extra ?? {});
+      case 'denied':
+        return deny(result.reason, result.message);
+      case 'wrong':
+        codeInput.value = '';
+        codeInput.placeholder = t.wrong;
+        codeInput.classList.add('error');
+        codeInput.focus();
+        return;
+      default:
+        sheet.expire();
     }
-    if (r.status === 403) {
-      const body = (await r.json().catch(() => ({}))) as { reason?: string; message?: string };
-      return deny(body.reason, body.message);
-    }
-    if (r.status === 400) {
-      codeInput.value = '';
-      codeInput.placeholder = t.wrong;
-      codeInput.classList.add('error');
-      codeInput.focus();
-      return;
-    }
-    // 404/409/410: the request is stale or the attempts are exhausted.
-    sheet.expire();
   };
 
   // The field opens from the link; polling goes on: the app may confirm by itself.
@@ -260,11 +436,20 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
       submitCode();
     }
   });
+  if (recovery?.onClick) {
+    const link = sheet.el<HTMLAnchorElement>('recovery');
+    link.addEventListener('click', (e) => {
+      if (!recovery.href) e.preventDefault();
+      recovery.onClick!();
+    });
+  }
+
+  if (sheet.inline && options.autoStart !== false) sheet.open();
 
   return {
     open: sheet.open,
     close: sheet.close,
     destroy: sheet.destroy,
-    element: sheet.dialog,
+    element: sheet.root,
   };
 }

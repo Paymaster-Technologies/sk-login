@@ -54,6 +54,15 @@ dialog.skl * { box-sizing: border-box; }
 dialog.skl[open] { animation: skl-in 220ms cubic-bezier(0.215, 0.61, 0.355, 1); }
 dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 @keyframes skl-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
+.skl-inline {
+  position: relative; background: var(--skl-item); color: var(--skl-text); font: 16px/1.5 var(--skl-font);
+  text-align: center; width: 100%; max-width: 480px; margin: 0 auto; border-radius: 14px;
+  border: 1px solid var(--skl-separator); overflow: hidden; box-sizing: border-box;
+}
+.skl-inline * { box-sizing: border-box; }
+.skl-inline .skl-close { visibility: hidden; }
+.skl-inline .skl-handle { display: none !important; }
+.skl-inline .skl-expired { border-radius: 14px; }
 .skl-inner { padding: 12px 16px 16px; position: relative; }
 .skl-handle { display: none; width: 32px; height: 4px; border-radius: 2px; margin: 2px auto 10px; background: var(--skl-secondary); }
 .skl-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; min-height: 44px; }
@@ -105,6 +114,7 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-action { min-width: 232px; }
 .skl-qr + .skl-btn { margin-top: 20px; }
 .skl-noapp { margin: 12px 0 0; font-size: 0.9rem; }
+.skl-recovery { margin: 14px 0 0; font-size: 0.9rem; }
 .skl-logo { display: block; position: relative; width: 56px; height: 56px; margin: 16px auto 20px; border-radius: 50%; }
 .skl-logo img { display: block; width: 100%; height: 100%; border-radius: 50%; }
 .skl-logo::after {

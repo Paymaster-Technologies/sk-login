@@ -68,16 +68,74 @@ Common to both popups:
 | `skSiteUrl` | `https://secretkeeper.net` | where the "install Secret Keeper" link points |
 | `headers`, `credentials` | `same-origin` | for fetch calls to the API (CSRF header, cookies for another origin) |
 | `pollMs` | 2000 | `status` polling period |
+| `container` | | render inline into this element instead of a modal dialog (see "Inline") |
 
 `mountSkLogin`:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `texts` | | override any strings (`Partial<Texts>`) |
-| `onSuccess(extra)` | required | sign-in succeeded; `extra` is what `onAuthenticated` returned on the server |
+| `onSuccess(extra)` | required | sign-in succeeded; `extra` is what `onAuthenticated` returned on the server, merged with what `complete` returned |
 | `onDenied(reason, message)` | | the server did not let this address in |
+| `transport` | the module's routes under `apiBase` | own server calls: `init()`, `status(sid)`, `submitCode?(sid, code)`, `cancel?(sid)` (see "Own routes") |
+| `complete(sid, extra)` | | finish the sign-in on the server after `authenticated`; the widget waits, does not close and does not call it twice; `onSuccess` only after it resolves; a rejection is shown as an error view (`error.message`, or `texts.completeFailed`) and is not retried |
+| `onCompleteError(error)` | | `complete` rejected (the error is already on the screen) |
+| `onCancelError(error)` | `console.warn` | `transport.cancel` rejected (the sheet is already closed) |
+| `manualCode` | `true` | offer the code entry after the scan; forced off when the transport has no `submitCode` |
+| `recoveryLink` | | `{ text, href?, onClick? }`: a link under the QR, e.g. "No access to Secret Keeper?" |
+| `autoStart` | `true` | inline mode: request the QR right away on mount |
 
-Returns `{ open(), close(), destroy(), element }`.
+Returns `{ open(), close(), destroy(), element }`. `close()` with a request
+in flight calls `transport.cancel(sid)` (when the transport has it) and
+ignores answers to that sid; after `authenticated` nothing is cancelled.
+`close()` is ignored while `complete` runs.
+
+### Own routes (second factor)
+
+A service that uses Secret Keeper as a second factor after a password
+usually has its own routes and response formats, finishes the sign-in with
+an extra server call (browser binding, session) and does not want the
+manual code. Everything in the widget's flow is replaceable:
+
+```ts
+const login = mountSkLogin({
+  container: document.getElementById('second-factor')!,   // inline, the QR appears at once
+  lang: 'en',
+  manualCode: false,
+  recoveryLink: { text: 'No access to Secret Keeper?', href: '/account/recover' },
+  transport: {
+    init: () => post('/auth/2fa/sk/start'),                               // -> { sid, payloadUrl, schemeUrl, ttlMs, qrSvg }
+    status: (sid) => get(`/auth/2fa/sk/state?sid=${sid}`),               // -> { state, ...extra }
+    cancel: (sid) => post('/auth/2fa/sk/cancel', { sid }),               // the person gave up
+  },
+  complete: async (sid) => {
+    const r = await fetch('/auth/2fa/sk/complete', { method: 'POST', body: JSON.stringify({ sid }) });
+    if (!r.ok) throw new Error((await r.json()).message ?? 'Could not finish the sign-in');
+    return r.json();                                                     // merged into onSuccess(extra)
+  },
+  onSuccess: () => location.assign('/'),
+});
+```
+
+`init` must return what the module's `POST init` returns (`sid`,
+`schemeUrl`, `ttlMs`, `qrSvg`, `payloadUrl`); `status` returns `{ state,
+reason?, message?, ...extra }` with the module's states (`new`,
+`challenged`, `authenticated`, `denied`, `cancelled`, `expired`);
+`submitCode` returns `{ kind: 'ok', extra? } | { kind: 'wrong' } | { kind:
+'denied', reason?, message? } | { kind: 'stale' }`. A rejected `init` or
+`submitCode` shows "could not reach the site"; a rejected `status` is
+ignored and the next poll retries. The default transport is exported as
+`httpTransport(apiBase, fetchOpts)` if you only need to wrap it.
+
+### Inline
+
+With `container` the sheet is rendered into the given element: no
+backdrop, no close button, no Esc, the width follows the container (up to
+480 px). The QR is requested on mount (`autoStart: false` to wait for
+`open()`). On the final views (declined, timed out, refused, failed) the
+button is "Try again" and starts a new request; `close()` hides the sheet
+and `open()` shows it again with a new request. `element` is the inline
+root (`div.skl.skl-inline`), otherwise the `<dialog>`.
 
 `mountSkRequest`:
 

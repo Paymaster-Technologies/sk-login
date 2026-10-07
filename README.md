@@ -21,7 +21,7 @@ The repository is a monorepo of three packages and an example:
 | --- | --- |
 | [`@paymastech/sk-login-core`](packages/core) | Framework-agnostic protocol: envelope cryptography, sign-in requests (`SkLogin`), data requests (`SkDataRequest`), challenge code, verification, stores. |
 | [`@paymastech/sk-login-nestjs`](packages/nestjs) | NestJS module: `SkLoginModule.forRoot(...)` mounts the sign-in routes (and the data request routes when configured) and provides `SkLoginService`. |
-| [`@paymastech/sk-login-widget`](packages/widget) | Browser popups: sign-in (QR, "with the app" button, waiting, manual code, refusal, timeout) and "fill from Secret Keeper". No framework, ESM plus a single IIFE file. |
+| [`@paymastech/sk-login-widget`](packages/widget) | Browser popups: sign-in (QR, "with the app" button, waiting, manual code, refusal, timeout) and "fill from Secret Keeper". Own transport, `complete` step and inline mode for second-factor pages. No framework, ESM plus a single IIFE file. |
 | [`examples/nestjs-demo`](examples/nestjs-demo) | Working application: module + widget + cookie session + a card form filled from the vault, plus a phone emulation for development. |
 
 Adapters for other frameworks (Express, Fastify, Next.js, Koa) are built
@@ -42,8 +42,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.3.0
-npm i $R/paymastech-sk-login-core-0.3.0.tgz $R/paymastech-sk-login-nestjs-0.3.0.tgz $R/paymastech-sk-login-widget-0.3.0.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.4.0
+npm i $R/paymastech-sk-login-core-0.3.0.tgz $R/paymastech-sk-login-nestjs-0.3.0.tgz $R/paymastech-sk-login-widget-0.4.0.tgz
 ```
 
 ```ts
@@ -99,7 +99,12 @@ Sign-in page:
 
 Or as a module: `import { mountSkLogin } from '@paymastech/sk-login-widget'`.
 The widget injects its own styles (`skl-` prefix, `--skl-*` variables), has
-light and dark themes, and becomes a bottom sheet on narrow screens.
+light and dark themes, and becomes a bottom sheet on narrow screens. A
+service with its own routes (Secret Keeper as a second factor after a
+password) can replace the server calls (`transport`), finish the sign-in
+with its own request (`complete`), drop the manual code, add a recovery
+link and render the sheet inline instead of a dialog: see the
+[widget README](packages/widget/README.md#own-routes-second-factor).
 
 ## Data request
 

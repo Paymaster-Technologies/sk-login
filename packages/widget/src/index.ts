@@ -9,11 +9,16 @@
 //   button.addEventListener('click', () => login.open());
 
 export {
+  httpTransport,
   mountSkLogin,
   texts,
+  type CodeResult,
   type InitResponse,
+  type RecoveryLink,
+  type SkLoginTransport,
   type SkLoginWidget,
   type SkLoginWidgetOptions,
+  type StatusResponse,
   type Texts,
 } from './login.js';
 export {

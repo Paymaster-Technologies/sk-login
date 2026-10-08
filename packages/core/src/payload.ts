@@ -18,7 +18,7 @@ export const SK_LOGIN_VERSION = 1;
 export const SITE_HOST_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/;
 
 export interface ServiceOptions {
-  /** The site's host (`lashin.su`): goes to the QR with the server address
+  /** The site's host (`auth.secretkeeper.net`): goes to the QR with the server address
    *  and to `meta.data.target`. Lower-cased; must be in the form the app accepts. */
   site?: string;
   /** An embedded target id instead of a site: an app that Secret Keeper

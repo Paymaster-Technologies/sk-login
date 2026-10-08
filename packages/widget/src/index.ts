@@ -1,6 +1,7 @@
 // @paymastech/sk-login-widget: the Secret Keeper popups without a framework.
-// The look and behavior are those of the lashin.su sheets (the reference
-// consumer): a bottom sheet on a narrow screen, a centered card on a wide one.
+// The look and behavior are those of the Secret Keeper app sheets, as seen
+// on auth.secretkeeper.net (the reference consumer): a bottom sheet on a
+// narrow screen, a centered card on a wide one.
 //
 //   mountSkLogin    "Sign in with Secret Keeper" (protocol § 4.5)
 //   mountSkRequest  "Fill from Secret Keeper", a vault record for a form (§ 4.6)

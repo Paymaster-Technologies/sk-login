@@ -35,8 +35,7 @@
 //   Keeper" on the next poll instead of waiting for the TTL.
 //
 // Errors are LoginError with a status, a reason code and a text; the API
-// returns them as JSON `{error, message}`
-// (secret_keeper/docs/HANDOFF_LASHIN_SU_LOGIN_ERRORS.md).
+// returns them as JSON `{error, message}` (protocol § 4.5, "refusals").
 
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 

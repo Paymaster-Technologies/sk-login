@@ -27,8 +27,8 @@ interface Reply {
  *                       200 challenge envelope | 200 {sent:true} | 204 (cancel) | 4xx {error, message}
  *   POST sk/request     raw envelope (only with `dataRequest`); 200 challenge envelope | 204 | 4xx {error, message}
  *
- * The page's routes under a prefix (`api/sk` by default), the same contract
- * as lashin.su (secret_keeper/docs/HANDOFF_LASHIN_SU_LOGIN_ERRORS.md):
+ * The page's routes under a prefix (`api/sk` by default), the contract the
+ * widget expects:
  *
  *   POST init           request: sid, payloadUrl, schemeUrl, ttlMs, qrSvg (widget)
  *   GET  status?sid=    poll from the browser: {state[, reason][, ...onAuthenticated]}

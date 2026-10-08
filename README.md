@@ -11,9 +11,10 @@ the site asks for a login and password, card details or personal data, the
 user picks a record in the app, and the values land in the form fields of
 the page that asked. See ["Data request"](#data-request).
 
-The reference consumer is [lashin.su](https://lashin.su): it runs on these
-packages (core on the server, the widget in the browser), so the popups
-there are what any site gets out of the box.
+The reference consumer is [auth.secretkeeper.net](https://auth.secretkeeper.net):
+a demo site on these packages (core on the server, the widget in the
+browser) with both flows live, sign-in and filling a form from the vault.
+The popups there are what any site gets out of the box.
 
 No registration and no app release are needed to connect a site: the QR
 carries the site's host and its server address, the app derives the

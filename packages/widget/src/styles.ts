@@ -1,9 +1,9 @@
 // Widget styles: everything under the skl- prefix, colors via CSS variables
 // with defaults (light and dark theme by prefers-color-scheme). The service
 // can override the variables on :root or on dialog.skl itself. The values
-// mirror the lashin.su sheets (src/styles/global.css there): lashin.su is
-// the reference consumer and uses this very widget, so a change here is a
-// change of the reference look.
+// come from the Secret Keeper app design tokens (app_ui_kit/tokens.dart).
+// The reference consumer, auth.secretkeeper.net, uses this very widget, so
+// a change here is a change of the reference look.
 export const STYLES = `
 .skl {
   --skl-bg: #f1f1f3;

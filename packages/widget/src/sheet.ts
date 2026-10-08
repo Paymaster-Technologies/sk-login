@@ -1,6 +1,6 @@
 // The sheet shared by the sign-in and the data request popups: a <dialog>
-// styled like the lashin.su sheets (a bottom sheet on a narrow screen, a
-// centered card on a wide one), the QR block with the app button, the TTL
+// styled like the Secret Keeper app sheets (a bottom sheet on a narrow
+// screen, a centered card on a wide one), the QR block with the app button, the TTL
 // countdown in the bar, the nested "QR expired / offline" sheet with
 // "Refresh", the "app did not open" hint and the final info views. The
 // owner (login.ts, request.ts) supplies the flow-specific views, the init

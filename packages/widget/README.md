@@ -7,8 +7,8 @@ confirmation, manual code entry, refusal and timeout screens.
 app for a vault record (login and password, card details, personal data)
 and handing the values to the page. A bottom sheet on narrow screens, a
 centered card on wide ones. No framework, about 40 KB, injects its own
-styles. The look is that of the popups on [lashin.su](https://lashin.su),
-the reference consumer.
+styles. The look is that of the popups on
+[auth.secretkeeper.net](https://auth.secretkeeper.net), the reference consumer.
 
 Works against the routes mounted by
 [`@paymastech/sk-login-nestjs`](https://www.npmjs.com/package/@paymastech/sk-login-nestjs)

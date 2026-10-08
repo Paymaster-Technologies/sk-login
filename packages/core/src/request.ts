@@ -5,9 +5,9 @@
 //
 // Steps:
 //   1. A page with a session calls init(kind, owner): a one-time sid and the
-//      payload `https://secretkeeper.net/request?v=1&sid=…&target=<id>&kind=…`
-//      (a QR for another device, `sk://request?…` for the same one). In hub
-//      mode the payload is `target=<hub>&destination=<id>&kind=…`.
+//      payload `https://secretkeeper.net/request?v=1&sid=…&site=<host>&address=<sk1…>&kind=…`
+//      (a QR for another device, `sk://request?…` for the same one); the
+//      app derives the endpoint `https://<host>/sk/request` from the host.
 //   2. The app POSTs an sk-data-request envelope (empty text, meta.data
 //      {target, v, sid, kind}) to the data endpoint. The decrypt
 //      authenticates the address; the reply is an sk-data-challenge envelope
@@ -43,7 +43,7 @@ import { decryptEnvelope, encryptEnvelope, extractArmor, senderAddressFromArmor 
 import type { IdentityKeys } from './crypto/identity.js';
 import { type Lang, type Messages, mergeMessages } from './i18n.js';
 import { DEFAULT_SID_TTL_MS, LoginError, MAX_CODE_ATTEMPTS } from './login.js';
-import { SK_LOGIN_VERSION, payloadQuery } from './payload.js';
+import { SK_LOGIN_VERSION, type Service, type ServiceOptions, resolveService } from './payload.js';
 import { MemorySidStore, type SidStore } from './store.js';
 
 /** Secret Keeper dispatcher page for data requests: universal link. */
@@ -89,14 +89,9 @@ export interface DataPending {
 
 export type DataRequestStore = SidStore<DataPending>;
 
-export interface SkDataRequestOptions {
+export interface SkDataRequestOptions extends ServiceOptions {
   /** Server identity: the same one as for sign-in. */
   identity: IdentityKeys;
-  /** Target id: the service id in the app (direct mode) or its
-   *  `destination` in the hub registry (hub mode). */
-  target: string;
-  /** Hub mode, see SkLoginOptions.hub. */
-  hub?: string;
   /** Request store; process memory by default. */
   store?: DataRequestStore;
   /** Request lifetime, ms; restarts when the app scans (challenged), as in sign-in. */
@@ -130,9 +125,11 @@ export function ownerKey(sessionToken: string): string {
 }
 
 export class SkDataRequest {
+  /** `site` or the embedded target id: what `meta.data.target` carries. */
   readonly target: string;
-  readonly hub: string | undefined;
+  readonly site: string | undefined;
   readonly ttlMs: number;
+  private readonly service: Service;
   readonly messages: Record<Lang, Messages>;
   private readonly identity: IdentityKeys;
   private readonly store: DataRequestStore;
@@ -141,8 +138,9 @@ export class SkDataRequest {
 
   constructor(options: SkDataRequestOptions) {
     this.identity = options.identity;
-    this.target = options.target;
-    this.hub = options.hub || undefined;
+    this.service = resolveService(options);
+    this.target = this.service.id;
+    this.site = this.service.site;
     this.ttlMs = options.ttlMs ?? DEFAULT_SID_TTL_MS;
     this.now = options.now ?? Date.now;
     this.store = options.store ?? new MemorySidStore<DataPending>(this.now);
@@ -161,7 +159,7 @@ export class SkDataRequest {
     const createdAt = this.now();
     const expiresAt = createdAt + this.ttlMs;
     await this.save({ sid, kind, owner, createdAt, expiresAt, state: 'new', ctx, codeAttempts: 0 });
-    const query = payloadQuery(sid, this.target, this.hub, { kind });
+    const query = this.service.query(sid, this.identity.address, { kind });
     return {
       sid,
       kind,
@@ -310,7 +308,7 @@ export class SkDataRequest {
     if (meta.type !== 'sk-data-cancel' && typeof meta.data.kind !== 'string') {
       throw new LoginError(400, 'bad-meta', 'envelope meta lacks kind');
     }
-    if (meta.data.target !== this.target || Number(meta.data.v) !== SK_LOGIN_VERSION) {
+    if (!this.service.accepts(meta.data.target) || Number(meta.data.v) !== SK_LOGIN_VERSION) {
       throw new LoginError(400, 'bad-meta', 'envelope is meant for another service or protocol version');
     }
     return {

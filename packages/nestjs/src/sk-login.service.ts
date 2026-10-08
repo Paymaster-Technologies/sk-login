@@ -36,9 +36,9 @@ export class SkLoginService<User = unknown> {
     if (!identity) throw new Error('SkLoginModule: either `mnemonic` or `identity` is required');
     this.login = new SkLogin<User>({
       identity,
+      site: options.target.site,
       target: options.target.id,
-      hub: options.target.hub,
-      owner: options.target.owner,
+      legacyTargets: options.target.legacyTargets,
       access: options.access,
       store: options.store,
       ttlMs: options.ttlMs,
@@ -49,8 +49,9 @@ export class SkLoginService<User = unknown> {
     this.request = options.dataRequest
       ? new SkDataRequest({
           identity,
+          site: options.target.site,
           target: options.target.id,
-          hub: options.target.hub,
+          legacyTargets: options.target.legacyTargets,
           store: options.dataRequest.store,
           ttlMs: options.dataRequest.ttlMs ?? options.ttlMs,
           describe: options.describe,
@@ -100,7 +101,7 @@ export class SkLoginService<User = unknown> {
     return this.dataRequest().poll(sid, owner);
   }
 
-  /** Parameters for the target entry in the Secret Keeper app (or the hub registry). */
+  /** Public information about the service (`GET target`). */
   target(loginUrl: string, requestUrl?: string): TargetInfo {
     return this.login.targetInfo(loginUrl, this.request ? requestUrl : undefined);
   }

@@ -14,16 +14,14 @@ import { SkLogin, identityFromMnemonic, contextFromHeaders, langFromAcceptLangua
 
 const sk = new SkLogin<User>({
   identity: identityFromMnemonic(process.env.SK_SERVER_MNEMONIC!),
-  target: 'my-service',
-  hub: 'auth_secretkeeper', // omit for the direct mode (entry in the app's skLoginTargets)
-  owner: process.env.SK_OWNER_ADDRESS, // your own sk1… address: lets you register the service in the hub catalog
+  site: 'example.com', // the public host: in the QR with the server address; the app posts to https://example.com/sk/login
   access: async (address) => (await users.has(address) ? { kind: 'granted', user: await users.get(address) } : { kind: 'denied', reason: 'unknown' }),
 });
 
 // POST init (browser): QR and sid
 const init = await sk.init(contextFromHeaders((h) => req.headers[h], req.socket.remoteAddress));
 
-// POST login (phone, text/plain)
+// POST /sk/login (the app, text/plain)
 try {
   const r = await sk.handleEnvelope(bodyText, langFromAcceptLanguage(req.headers['accept-language']));
   // 'challenge' -> reply with r.armored as text/plain; 'code-accepted' -> { sent: true }; 'cancelled' -> 204
@@ -37,7 +35,7 @@ const { state, user, reason } = await sk.poll(sid);   // authenticated -> set a 
 // POST code (browser, manual entry)
 const user = await sk.submitCode(sid, code);          // LoginError on a wrong code or a refusal
 
-// GET target (humans, hub catalog): { id, hub?, v, url, requestUrl?, serverAddress, checkDigits, ownerHash? }
+// GET target (humans, agents): { id, site?, v, url, requestUrl?, serverAddress, checkDigits }
 const info = sk.targetInfo(`${publicUrl}/api/sk/login`, `${publicUrl}/api/sk/data`);
 ```
 
@@ -46,7 +44,7 @@ Data request, the same shape:
 ```ts
 import { SkDataRequest, ownerKey } from '@paymastech/sk-login-core';
 
-const data = new SkDataRequest({ identity, target: 'my-service', hub: 'auth_secretkeeper' });
+const data = new SkDataRequest({ identity, site: 'example.com' });
 
 // POST request/init (browser, signed in): the owner is the page session, only it gets the values
 const init = await data.init('card-details', ownerKey(sessionToken), ctx);   // { sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs }
@@ -63,7 +61,7 @@ answers `expired`.
 
 Exports: `SkLogin`, `SkDataRequest`, `LoginError`, `MemoryPendingStore`,
 `MemorySidStore`, `PendingStore`, `DataRequestStore`, `SidStore` (for Redis),
-`KINDS`, `isKind`, `ownerKey`, `ownerHash`, `TargetInfo`, `contextFromHeaders`, `describeContext`,
+`KINDS`, `isKind`, `ownerKey`, `resolveService`, `SITE_HOST_RE`, `TargetInfo`, `contextFromHeaders`, `describeContext`,
 `parseUserAgent`, `langFromAcceptLanguage`, `identityFromMnemonic`,
 `generateMnemonic`, `deriveIdentityKeys`, `keyCheckDigits`, `encryptEnvelope`,
 `decryptEnvelope`, `loginMeta`, `requestMeta`, `payloadQuery`.

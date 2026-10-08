@@ -12,8 +12,14 @@ user picks a record in the app, and the values land in the form fields of
 the page that asked. See ["Data request"](#data-request).
 
 The reference consumer is [lashin.su](https://lashin.su): it runs on these
-packages (core on the server, the widget from the hub in the browser), so
-the popups there are what any site gets out of the box.
+packages (core on the server, the widget in the browser), so the popups
+there are what any site gets out of the box.
+
+No registration and no app release are needed to connect a site: the QR
+carries the site's host and its server address, the app derives the
+endpoints from the host (`https://<host>/sk/login`, `https://<host>/sk/request`)
+and encrypts to the address, like to a contact who showed their QR. See
+["How the app finds your server"](#how-the-app-finds-your-server).
 
 The repository is a monorepo of three packages and an example:
 
@@ -42,8 +48,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.4.1
-npm i $R/paymastech-sk-login-core-0.3.0.tgz $R/paymastech-sk-login-nestjs-0.3.0.tgz $R/paymastech-sk-login-widget-0.4.1.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.5.0
+npm i $R/paymastech-sk-login-core-0.5.0.tgz $R/paymastech-sk-login-nestjs-0.5.0.tgz $R/paymastech-sk-login-widget-0.5.0.tgz
 ```
 
 ```ts
@@ -57,7 +63,7 @@ interface User { id: string; address: string }
   imports: [
     SkLoginModule.forRoot<User>({
       mnemonic: process.env.SK_SERVER_MNEMONIC!,   // 12 BIP-39 words, see "Secrets"
-      target: { id: 'my-service', publicUrl: 'https://api.example.com' },
+      target: { site: 'example.com' },           // the public host: the app posts to https://example.com/sk/login
       // Who to let in: called once after confirmation, receives the sk1… address
       access: async (address) => {
         const user = await users.findByAddress(address);
@@ -74,16 +80,18 @@ interface User { id: string; address: string }
 export class AppModule {}
 ```
 
-The module reads the `POST login` body itself (`text/plain`), so the
-global body parser does not need to be touched. Works on both Express and
-Fastify.
+The module mounts the app's endpoints `POST /sk/login` and `POST /sk/request`
+at the root of the application (Secret Keeper derives them from the host in
+the QR, so they must be reachable at `https://<site>/sk/...`) and the page's
+routes under `api/sk`. It reads the envelope bodies itself (`text/plain`),
+so the global body parser does not need to be touched. Works on both
+Express and Fastify.
 
 Sign-in page:
 
 ```html
-<!-- from the hub (see "Hub"), or serve
-     node_modules/@paymastech/sk-login-widget/dist/sk-login-widget.global.js as a static file -->
-<script src="https://auth.secretkeeper.net/widget.js"></script>
+<!-- serve node_modules/@paymastech/sk-login-widget/dist/sk-login-widget.global.js as a static file -->
+<script src="/static/sk-login-widget.global.js"></script>
 <button id="login">Sign in</button>
 <script>
   const login = SkLoginWidget.mountSkLogin({
@@ -133,9 +141,9 @@ SkLoginModule.forRoot<User>({
 ```
 
 This adds `POST request/init` (`{ kind }`), `GET request/status?sid=` and
-the phone route `POST data` (`text/plain` envelopes `sk-data-request`,
-`sk-data`, `sk-data-cancel`); `GET target` gains `requestUrl`. Kinds and
-their fields:
+the app's endpoint `POST /sk/request` (`text/plain` envelopes
+`sk-data-request`, `sk-data`, `sk-data-cancel`); `GET target` gains
+`requestUrl`. Kinds and their fields:
 
 | Kind | Fields |
 | --- | --- |
@@ -162,78 +170,46 @@ or `{ state: 'filled', values, sender, filledAt }`; a second call after
 `filled` answers `expired` (the values were handed over once). Without a
 session (`owner` returned `undefined`) the browser routes answer `401
 { error: 'unauthorized' }`; the widget then calls `onUnauthorized` (a page
-reload by default). In the hub mode the data request QR goes through the
-hub exactly like the sign-in one (`/request?...&target=<hub>&destination=<id>`).
+reload by default).
 
-## Onboarding a new service (checklist)
+## How the app finds your server
 
-The Secret Keeper app only sends envelopes to targets it knows. There are
-two ways to become one:
+The QR (and the "Sign in with the app" link) is
+`https://secretkeeper.net/auth?v=1&sid=…&site=<host>&address=<sk1…>`
+(`/request?…&kind=…` for a data request). The app reads only `v`, `sid`,
+`site`, `address` (and `kind`):
 
-- **Through the hub** (recommended): the app has a single built-in entry
-  for the hub (`auth.secretkeeper.net`), and your service is registered in
-  the hub's registry under a short `destination` id. No app release is
-  needed. The hub relays the app's envelopes to your `login` endpoint and
-  does not read them: they are encrypted to your server address.
-- **Direct**: your id, `login` URL and server address are hardcoded in the
-  app's `skLoginTargets`, which requires an app release per service.
+- `site` is your public host, exactly what `target.site` is set to: bare
+  ASCII, lower-case, no scheme, port or path (an IDN host in punycode). The
+  app shows it on the consent screen as the name of the service and derives
+  the endpoints from it by convention: `https://<host>/sk/login` and
+  `https://<host>/sk/request`. There is no URL in the QR and the app will
+  not take one: that is what makes a copied QR under a foreign host useless.
+- `address` is your server's `sk1…` address (from the mnemonic). The app
+  encrypts the request to it and accepts the challenge only from it, the
+  same way it treats a contact who showed their own QR. The two-step
+  exchange proves that the party behind the endpoint holds the key of that
+  address; the binding of the address to the host comes from the channel
+  the key arrived through, your page in the user's browser, not from the
+  app's network path. Why this is safe and what it does not cover:
+  `docs/protocol.md` § 4.5 "Security model" in the Secret Keeper repository
+  (a copy is at [secretkeeper.net/protocol](https://secretkeeper.net/protocol)).
+- `meta.data.target` of every envelope repeats the host; the module rejects
+  envelopes meant for another service (`bad-meta`).
 
-Steps for the hub mode:
+So onboarding is: generate the mnemonic once and keep it secret
+(`node -e "import('@paymastech/sk-login-core').then(m => console.log(m.generateMnemonic().join(' ')))"`),
+start the module with `target: { site: '<host>' }`, make sure
+`https://<host>/sk/login` (and `/sk/request` with `dataRequest`) reaches
+it over HTTPS from the internet, put the widget on the page. No
+registration anywhere, no app release. `GET api/sk/target` publishes the
+same facts (`site`, `url`, `requestUrl`, `serverAddress`, `checkDigits`)
+for humans and agents; the app does not read it.
 
-1. Generate the server mnemonic (once, keep it as a secret):
-   ```bash
-   node -e "import('@paymastech/sk-login-core').then(m => console.log(m.generateMnemonic().join(' ')))"
-   ```
-2. Start the module with `target: { id: '<destination>', hub: 'auth_secretkeeper', owner, publicUrl }`.
-   `id` is the short Latin name you want in the registry (`[a-z0-9_-]{1,32}`),
-   `hub` is the hub's target id in the app (`auth_secretkeeper` in
-   production; the Secret Keeper team may give you a staging one), `owner`
-   is the `sk1…` address of your own Secret Keeper app (Settings → address).
-3. Open `GET <publicUrl>/api/sk/target`: it contains `id`, `hub`, `url`
-   (your `login` endpoint), `serverAddress` (`sk1…`), `checkDigits` for
-   verification by voice and `ownerHash` (the hash of `owner`; the address
-   itself is not published).
-4. Open the hub (`https://auth.secretkeeper.net/`), sign in with the phone
-   whose address you put into `owner`, and submit the URL of your service. The catalog fetches `GET target`, checks that `ownerHash`
-   matches the signed-in address and that `hub` names this hub, and creates
-   the registry entry. From that moment the sign-in works with the released
-   app; the app shows your host name until the hub owner approves the
-   display name you propose in the catalog.
-5. The `login` endpoint must be reachable from the internet over HTTPS: it
-   is called by the hub, not by the browser.
-6. If `serverAddress` changes (a new mnemonic), press "Re-check" on your
-   entry in the catalog: envelopes are encrypted to this address.
-
-In the direct mode steps 2-4 differ: start the module without `hub`, and
-the team adds the target to `skLoginTargets` and ships an app release;
-until that release is out, the sign-in can only be tested with the phone
-emulation (see demo, `DEMO_FAKE_PHONE=1`).
-
-## Hub
-
-The hub is a relay operated by the Secret Keeper team. With `hub` set the
-QR becomes `https://secretkeeper.net/auth?v=1&sid=…&target=<hub>&destination=<id>`.
-The app asks the hub for the display name and server address of
-`destination`, encrypts the usual envelope to your server, wraps it into an
-outer envelope addressed to the hub, and posts it there. The hub decrypts
-only the outer envelope (which authenticates the sender), forwards the
-inner one to your `login` URL and returns your reply unchanged. Your server
-sees exactly the same envelopes as in the direct mode, so the module does
-not change behavior; only the QR does.
-
-The hub also serves the browser widget (both popups), so you do not have
-to bundle it:
-
-```html
-<script src="https://auth.secretkeeper.net/widget.js"></script>
-```
-
-`@paymastech/sk-login-widget` remains available for self-hosting.
-
-The hub keeps a catalog of registered services. Service owners sign in to
-the catalog with Secret Keeper and register their service by URL (see the
-checklist above); the hub owner moderates display names and can block an
-entry. The entry is public at `GET <hub>/targets/<destination>`.
+Apps that Secret Keeper knows by name (Tetatet) use `target: { id }` instead
+of `site`: their URL and address are built into the app and the QR carries
+`target=<id>`. A site that used to be such an entry can keep accepting
+envelopes with the old id for a while with `target.legacyTargets: ['<id>']`.
 
 ## Secrets and environment
 
@@ -242,9 +218,6 @@ entry. The entry is public at `GET <hub>/targets/<destination>`.
   service to the app. Keep it in a secret manager / `.env` outside the
   repository, do not log it. Instead of the mnemonic you can pass a
   ready-made `identity` (`identityFromMnemonic`) if the keys come from a vault.
-- `SK_OWNER_ADDRESS` (suggested name): the `sk1…` address of your own Secret
-  Keeper app, passed as `target.owner`. Not a secret, but only its hash is
-  published; it is what lets you manage the service entry in the hub catalog.
 - No external services: the module makes no network calls, everything
   happens between your server, the browser and the user's phone.
   `secretkeeper.net` in the QR is needed only as a universal link
@@ -252,25 +225,26 @@ entry. The entry is public at `GET <hub>/targets/<destination>`.
 
 ## Module HTTP API
 
-Default prefix `api/sk` (`routePrefix` in `forRoot`/`forRootAsync`).
-Browser routes: `init`, `status`, `code`. Phone route: `login`.
-Service route: `target`.
+The app's endpoints are at the root of the application, where Secret
+Keeper derives them from the host in the QR:
+
+| Method and path | Caller | Request | Response |
+| --- | --- | --- | --- |
+| `POST /sk/login` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
+| `POST /sk/request` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-data-request`), `204` (for `sk-data` and `sk-data-cancel`) or `4xx { error, message }`; `404 not-configured` without `dataRequest` |
+
+The page's routes live under the prefix `api/sk` (`routePrefix` in
+`forRoot`/`forRootAsync`):
 
 | Method and path | Caller | Request | Response |
 | --- | --- | --- | --- |
 | `POST init` | browser | empty | `{ sid, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }` |
-| `POST login` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-login`), `{ sent: true }` (for `sk-login-code`), `204` (for `sk-login-cancel`) or `4xx { error, message }` |
 | `GET status?sid=` | browser | | `{ state, reason?, ...extra }` where `state` is `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
 | `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied: true, reason, message }` or `4xx { error, message }` |
-| `GET target` | humans, hub catalog | | `{ id, hub?, v, url, requestUrl?, serverAddress, checkDigits, ownerHash? }` |
-
-With `dataRequest` configured (see "Data request"):
-
-| Method and path | Caller | Request | Response |
-| --- | --- | --- | --- |
-| `POST request/init` | browser | `{ kind }` | `{ sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }`, `401 { error: 'unauthorized' }`, `400 { error: 'bad-kind' }` |
-| `POST data` | app | `text/plain`, envelope | challenge envelope `text/plain` (for `sk-data-request`), `204` (for `sk-data` and `sk-data-cancel`) or `4xx { error, message }` |
-| `GET request/status?sid=` | browser | | `{ state }` or `{ state: 'filled', values, sender, filledAt }` |
+| `GET target` | humans, agents | | `{ id, site?, v, url, requestUrl?, serverAddress, checkDigits }` |
+| `POST request/init` | browser | `{ kind }` | `{ sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }`, `401 { error: 'unauthorized' }`, `400 { error: 'bad-kind' }`; with `dataRequest` only |
+| `GET request/status?sid=` | browser | | `{ state }` or `{ state: 'filled', values, sender, filledAt }`; with `dataRequest` only |
+| `POST login`, `POST data` | older app builds | as `/sk/login` and `/sk/request` | aliases from the time the endpoints were per-service entries in the app |
 
 Without `dataRequest` these routes answer `404 { error: 'not-configured' }`.
 
@@ -288,7 +262,7 @@ Without `dataRequest` these routes answer `404 { error: 'not-configured' }`.
 
 Flow: the browser calls `init`, draws a QR with `payloadUrl`, polls
 `status` every 2 s. The app scans the QR, sends an `sk-login` envelope to
-`login`, receives an envelope with a 6-digit code and the browser context
+`/sk/login`, receives an envelope with a 6-digit code and the browser context
 (IP, browser, OS, geo if `geo` is set) and shows it to the user. The user
 confirms in the app: the app sends `sk-login-code`, the server calls
 `access`, the status becomes `authenticated` or `denied`. If the app
@@ -305,9 +279,9 @@ request is marked `used`, and further `status` calls for this sid answer
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `mnemonic` or `identity` | one is required | server identity |
-| `target.id` | required | service id: the hub `destination` (hub mode) or the entry in the app's `skLoginTargets` (direct mode) |
-| `target.hub` | | hub target id (e.g. `auth_secretkeeper`); switches the QR to `target=<hub>&destination=<id>` |
-| `target.owner` | | `sk1…` address of the service owner; `GET target` publishes its hash as `ownerHash` and the hub catalog lets this address register the service |
+| `target.site` | one of `site`/`id` | the public host of the service (`example.com`): in the QR with the server address and in `meta.data.target`; the app posts to `https://<host>/sk/login` |
+| `target.id` | one of `site`/`id` | an embedded target id instead of a site (an app built into Secret Keeper, e.g. `tetatet`) |
+| `target.legacyTargets` | | other `meta.data.target` values to accept for a while (the embedded id a site had before `site`) |
 | `target.publicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
 | `access(address)` | required | `{ kind: 'granted', user }` or `{ kind: 'denied', reason, message? }` |
 | `onAuthenticated(user, { req, res })` | | session, cookie, token; the return value goes into the JSON for the browser |
@@ -355,10 +329,10 @@ same shape of store (`DataRequestStore = SidStore<DataPending>`), passed as
 ```ts
 import { SkLogin, identityFromMnemonic, contextFromHeaders, langFromAcceptLanguage } from '@paymastech/sk-login-core';
 
-const sk = new SkLogin({ identity: identityFromMnemonic(process.env.SK_SERVER_MNEMONIC!), target: 'my-service', access });
+const sk = new SkLogin({ identity: identityFromMnemonic(process.env.SK_SERVER_MNEMONIC!), site: 'example.com', access });
 
 app.post('/api/sk/init', async (req, res) => res.json(await sk.init(contextFromHeaders((h) => req.headers[h], req.socket.remoteAddress))));
-app.post('/api/sk/login', text(), async (req, res) => {
+app.post('/sk/login', text(), async (req, res) => {   // the app derives this path from the host in the QR
   try {
     const r = await sk.handleEnvelope(req.body, langFromAcceptLanguage(req.headers['accept-language']));
     // r.kind: 'challenge' (r.armored -> text/plain) | 'code-accepted' ({ sent: true }) | 'cancelled' (204)

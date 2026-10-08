@@ -1,7 +1,14 @@
 import { Body, Controller, Get, Inject, Logger, Post, Query, Req, Res, type Type } from '@nestjs/common';
 import { LoginError, contextFromHeaders, isKind, langFromAcceptLanguage } from '@paymastech/sk-login-core';
 
-import { DEFAULT_DATA_MAX_BODY, DEFAULT_MAX_BODY, SK_LOGIN_OPTIONS, type SkLoginModuleOptions } from './options.js';
+import {
+  DEFAULT_DATA_MAX_BODY,
+  DEFAULT_MAX_BODY,
+  SK_LOGIN_ENDPOINT,
+  SK_LOGIN_OPTIONS,
+  SK_REQUEST_ENDPOINT,
+  type SkLoginModuleOptions,
+} from './options.js';
 import { SkLoginService } from './sk-login.service.js';
 
 /** Platform reply (Express `Response` or Fastify `FastifyReply`): the common subset. */
@@ -13,26 +20,31 @@ interface Reply {
 }
 
 /**
- * Five sign-in routes under a prefix (`api/sk` by default), the same contract
+ * The app's endpoints at the root, where Secret Keeper derives them from
+ * the site host (protocol § 4.5-4.6):
+ *
+ *   POST sk/login       raw text/plain envelope;
+ *                       200 challenge envelope | 200 {sent:true} | 204 (cancel) | 4xx {error, message}
+ *   POST sk/request     raw envelope (only with `dataRequest`); 200 challenge envelope | 204 | 4xx {error, message}
+ *
+ * The page's routes under a prefix (`api/sk` by default), the same contract
  * as lashin.su (secret_keeper/docs/HANDOFF_LASHIN_SU_LOGIN_ERRORS.md):
  *
  *   POST init           request: sid, payloadUrl, schemeUrl, ttlMs, qrSvg (widget)
- *   POST login          endpoint from the app's target list: raw text/plain envelope;
- *                       200 challenge envelope | 200 {sent:true} | 204 (cancel) | 4xx {error, message}
  *   GET  status?sid=    poll from the browser: {state[, reason][, ...onAuthenticated]}
  *   POST code           manual code entry {sid, code}: 200 {ok[, ...]} | 403 {denied, reason} | 4xx {error}
- *   GET  target         parameters for the entry in the app's skLoginTargets
- *
- * Data requests (§ 4.6), only with the `dataRequest` option:
- *
+ *   GET  target         public information about the service
  *   POST request/init   {kind} from a page with a session: sid, payloadUrl, schemeUrl, ttlMs, qrSvg
  *   GET  request/status?sid=  poll by the owner: {state} | {state:'filled', values, sender, filledAt} once
- *   POST data           `requestUrl` of the target: raw envelope; 200 challenge envelope | 204 | 4xx {error, message}
+ *   POST login, data    aliases of sk/login and sk/request from the time the endpoints were
+ *                       per-service entries in the app; older app builds still post here
  *
  * The class is created by a factory so that the prefix can be a module parameter.
  */
 export function createSkLoginController(prefix: string): Type<unknown> {
-  @Controller(prefix)
+  const p = (route: string) => `${prefix.replace(/^\/|\/$/g, '')}/${route}`;
+
+  @Controller()
   class SkLoginController {
     private readonly log = new Logger('SkLogin');
 
@@ -41,14 +53,14 @@ export function createSkLoginController(prefix: string): Type<unknown> {
       @Inject(SK_LOGIN_OPTIONS) private readonly options: SkLoginModuleOptions,
     ) {}
 
-    @Post('init')
+    @Post(p('init'))
     async init(@Req() req: any, @Res() res: Reply) {
       const ctx = contextFromHeaders((n) => req.headers?.[n], remoteAddress(req), this.options.trustProxy !== false);
       const init = await this.sk.init(ctx);
       json(res, 200, init);
     }
 
-    @Post('login')
+    @Post([SK_LOGIN_ENDPOINT, p('login')])
     async login(@Req() req: any, @Res() res: Reply) {
       const lang = langFromAcceptLanguage(req.headers?.['accept-language']);
       let body: string;
@@ -81,7 +93,7 @@ export function createSkLoginController(prefix: string): Type<unknown> {
       }
     }
 
-    @Get('status')
+    @Get(p('status'))
     async status(@Query('sid') sid: string | undefined, @Req() req: any, @Res() res: Reply) {
       const result = await this.sk.poll(sid ?? '');
       if (result.state === 'authenticated') {
@@ -92,7 +104,7 @@ export function createSkLoginController(prefix: string): Type<unknown> {
       json(res, 200, { state: result.state });
     }
 
-    @Post('code')
+    @Post(p('code'))
     async code(@Body() payload: unknown, @Req() req: any, @Res() res: Reply) {
       const p = (payload ?? {}) as { sid?: unknown; code?: unknown };
       if (typeof p.sid !== 'string' || typeof p.code !== 'string') return json(res, 400, { error: 'bad-json' });
@@ -112,17 +124,16 @@ export function createSkLoginController(prefix: string): Type<unknown> {
       }
     }
 
-    @Get('target')
+    @Get(p('target'))
     target(@Req() req: any, @Res() res: Reply) {
       const origin = this.options.target.publicUrl?.replace(/\/$/, '') ?? originOf(req);
-      const base = `${origin}/${prefix.replace(/^\/|\/$/g, '')}`;
       res
         .status(200)
         .type('application/json')
-        .send(JSON.stringify(this.sk.target(`${base}/login`, `${base}/data`), null, 2));
+        .send(JSON.stringify(this.sk.target(`${origin}/${SK_LOGIN_ENDPOINT}`, `${origin}/${SK_REQUEST_ENDPOINT}`), null, 2));
     }
 
-    @Post('request/init')
+    @Post(p('request/init'))
     async requestInit(@Body() payload: unknown, @Req() req: any, @Res() res: Reply) {
       if (!this.options.dataRequest) return notConfigured(res);
       const owner = await this.options.dataRequest.owner({ req, res });
@@ -133,7 +144,7 @@ export function createSkLoginController(prefix: string): Type<unknown> {
       json(res, 200, await this.sk.initRequest(kind, owner, ctx));
     }
 
-    @Get('request/status')
+    @Get(p('request/status'))
     async requestStatus(@Query('sid') sid: string | undefined, @Req() req: any, @Res() res: Reply) {
       if (!this.options.dataRequest) return notConfigured(res);
       const owner = await this.options.dataRequest.owner({ req, res });
@@ -141,7 +152,7 @@ export function createSkLoginController(prefix: string): Type<unknown> {
       json(res, 200, await this.sk.pollRequest(sid ?? '', owner));
     }
 
-    @Post('data')
+    @Post([SK_REQUEST_ENDPOINT, p('data')])
     async data(@Req() req: any, @Res() res: Reply) {
       if (!this.options.dataRequest) return notConfigured(res);
       const lang = langFromAcceptLanguage(req.headers?.['accept-language']);

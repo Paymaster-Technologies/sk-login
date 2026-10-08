@@ -17,13 +17,12 @@ or any adapter on top of `@paymastech/sk-login-core` (`init`, `status`,
 
 ## Setup
 
-As a single file with the `SkLoginWidget` global, from the hub or from
+As a single file with the `SkLoginWidget` global, served by your site from
 your own static files:
 
 ```html
-<script src="https://auth.secretkeeper.net/widget.js"></script>
-<!-- or dist/sk-login-widget.global.js from the package:
-<script src="/static/sk-login-widget.global.js"></script> -->
+<!-- dist/sk-login-widget.global.js from the package -->
+<script src="/static/sk-login-widget.global.js"></script>
 <script>
   const login = SkLoginWidget.mountSkLogin({
     apiBase: '/api/sk',

@@ -8,8 +8,7 @@ request, protocol § 4.6).
 ```bash
 npm i && npm run build          # from the repository root
 npm run demo                    # http://localhost:3000, random mnemonic
-SK_SERVER_MNEMONIC="…" SK_TARGET=my-service npm run demo
-SK_TARGET=my-service SK_HUB=auth_secretkeeper SK_OWNER_ADDRESS=sk1… npm run demo   # QR in hub mode, see README "Hub"
+SK_SERVER_MNEMONIC="…" SK_SITE=my-service.example npm run demo   # the public host of the service in the QR
 ```
 
 Phone emulation for development without the app:

@@ -1,7 +1,7 @@
 {
   "name": "sk-login",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Sign in with Secret Keeper: protocol core, NestJS module and browser widget",
   "license": "MIT",
   "type": "module",

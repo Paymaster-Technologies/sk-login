@@ -70,9 +70,9 @@ const mnemonic = process.env.SK_SERVER_MNEMONIC ?? generateMnemonic().join(' ');
   imports: [
     SkLoginModule.forRoot<User>({
       mnemonic,
-      // SK_HUB=auth_secretkeeper switches the QR to hub mode (see README, "Hub");
-      // SK_OWNER_ADDRESS is your own sk1… address for the hub catalog.
-      target: { id: process.env.SK_TARGET ?? 'demo', hub: process.env.SK_HUB, owner: process.env.SK_OWNER_ADDRESS },
+      // SK_SITE is the public host of this service: the QR carries it with
+      // the server address and the app posts to https://<host>/sk/login.
+      target: { site: process.env.SK_SITE ?? 'demo.example' },
       // The demo lets everyone in: a real service would look up the user by
       // the sk1… address here, check an allowlist or link to an account.
       access: async (address): Promise<AccessDecision<User>> => ({ kind: 'granted', user: { address } }),

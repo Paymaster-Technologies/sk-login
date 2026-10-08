@@ -37,7 +37,7 @@ export class FakePhoneController {
 
   @Post('phone')
   async act(@Query('sid') sid: string, @Query('show') show: string | undefined, @Query('cancel') cancel: string | undefined, @Res() res: any) {
-    const target = this.sk.options.target.id;
+    const target = this.sk.login.target;
     const to = this.sk.serverAddress;
     const envelope = (type: string, plaintext = '', challenge?: number) =>
       encryptEnvelope({ sender: phone, recipientAddress: to, plaintext, meta: loginMeta(target, type, sid, challenge) });
@@ -60,7 +60,7 @@ export class FakePhoneController {
 
   @Post('phone-data')
   async data(@Query('sid') sid: string, @Query('kind') kind: string, @Query('cancel') cancel: string | undefined, @Res() res: any) {
-    const target = this.sk.options.target.id;
+    const target = this.sk.login.target;
     const to = this.sk.serverAddress;
     const envelope = (type: string, plaintext: string, code?: string, challenge?: number) =>
       encryptEnvelope({ sender: phone, recipientAddress: to, plaintext, meta: requestMeta(target, type, sid, kind, code, challenge) });

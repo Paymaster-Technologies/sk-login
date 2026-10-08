@@ -11,7 +11,6 @@ import {
   generateMnemonic,
   type IdentityKeys,
   loginMeta,
-  ownerHash,
   ownerKey,
   requestMeta,
 } from '@paymastech/sk-login-core';
@@ -20,10 +19,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { SkLoginModule, SkLoginService } from '../src/index.js';
 
-const TARGET = 'demo';
+/** The site host: in the QR with the server address, in meta.data.target of every envelope. */
+const TARGET = 'demo.example';
 const MNEMONIC = generateMnemonic();
-/** The service owner's own Secret Keeper address (not the server). */
-const OWNER = deriveIdentityKeys(generateMnemonic()).address;
 
 interface User {
   address: string;
@@ -56,7 +54,7 @@ beforeAll(async () => {
         routePrefix: 'auth/sk',
         useFactory: () => ({
           mnemonic: MNEMONIC,
-          target: { id: TARGET, publicUrl: 'https://api.example.com/' },
+          target: { site: TARGET, legacyTargets: ['demo'], publicUrl: 'https://api.example.com/' },
           access: async (address): Promise<AccessDecision<User>> =>
             blocked ? { kind: 'denied', reason: 'blocked', message: { en: 'Nope' } } : { kind: 'granted', user: { address } },
           onAuthenticated: (user, { res }) => {
@@ -82,45 +80,61 @@ afterAll(async () => {
 });
 
 describe('SkLoginModule over HTTP', () => {
-  it('target describes the server for the app registry', async () => {
+  it('target describes the service: the endpoint the app derives from the host', async () => {
     const r = await request(app.getHttpServer()).get('/auth/sk/target').expect(200);
     expect(r.body).toEqual({
       id: TARGET,
+      site: TARGET,
       v: 1,
-      url: 'https://api.example.com/auth/sk/login',
+      url: 'https://api.example.com/sk/login',
       serverAddress: server.address,
       checkDigits: expect.stringMatching(/^\d{5}( \d{5}){4}$/),
     });
   });
 
-  it('hub mode: target reports the hub and init points the QR at it', async () => {
+  it('the QR carries the site and the server address; the app posts to /sk/login at the root', async () => {
+    const http = request(app.getHttpServer());
+    const init = await http.post('/auth/sk/init').expect(200);
+    const url = new URL(init.body.payloadUrl);
+    expect(url.searchParams.get('site')).toBe(TARGET);
+    expect(url.searchParams.get('address')).toBe(server.address);
+    expect(url.searchParams.has('target')).toBe(false);
+    const sid = init.body.sid;
+    const ch = await http.post('/sk/login').set('content-type', 'text/plain').send(envelope('sk-login', sid)).expect(200);
+    expect(openChallenge(ch.text).meta.data.target).toBe(TARGET);
+    expect((await http.get(`/auth/sk/status?sid=${sid}`)).body).toEqual({ state: 'challenged' });
+    // An older app build with the embedded id posts the old target to the old alias.
+    const { sid: sid2 } = (await http.post('/auth/sk/init')).body;
+    const old = encryptEnvelope({ sender: phone, recipientAddress: server.address, plaintext: '', meta: loginMeta('demo', 'sk-login', sid2) });
+    await http.post('/auth/sk/login').set('content-type', 'text/plain').send(old).expect(200);
+    expect((await http.get(`/auth/sk/status?sid=${sid2}`)).body).toEqual({ state: 'challenged' });
+  });
+
+  it('an embedded target keeps the older payload form', async () => {
     @Module({
       imports: [
         SkLoginModule.forRoot<User>({
           mnemonic: MNEMONIC,
-          target: { id: TARGET, hub: 'auth_secretkeeper', owner: OWNER, publicUrl: 'https://api.example.com/' },
+          target: { id: 'tetatet', publicUrl: 'https://api.example.com/' },
           access: async (address): Promise<AccessDecision<User>> => ({ kind: 'granted', user: { address } }),
         }),
       ],
     })
-    class HubModule {}
-    const ref = await Test.createTestingModule({ imports: [HubModule] }).compile();
-    const hubApp = ref.createNestApplication();
-    await hubApp.init();
+    class EmbeddedModule {}
+    const ref = await Test.createTestingModule({ imports: [EmbeddedModule] }).compile();
+    const embeddedApp = ref.createNestApplication();
+    await embeddedApp.init();
     try {
-      const http = request(hubApp.getHttpServer());
+      const http = request(embeddedApp.getHttpServer());
       const target = await http.get('/api/sk/target').expect(200);
-      expect(target.body.hub).toBe('auth_secretkeeper');
-      expect(target.body.id).toBe(TARGET);
-      // Only the hash of the owner address is public.
-      expect(target.body.ownerHash).toBe(ownerHash(OWNER));
-      expect(JSON.stringify(target.body)).not.toContain(OWNER);
+      expect(target.body.id).toBe('tetatet');
+      expect(target.body.site).toBeUndefined();
       const init = await http.post('/api/sk/init').expect(200);
       const url = new URL(init.body.payloadUrl);
-      expect(url.searchParams.get('target')).toBe('auth_secretkeeper');
-      expect(url.searchParams.get('destination')).toBe(TARGET);
+      expect(url.searchParams.get('target')).toBe('tetatet');
+      expect(url.searchParams.has('site')).toBe(false);
     } finally {
-      await hubApp.close();
+      await embeddedApp.close();
     }
   });
 
@@ -132,7 +146,7 @@ describe('SkLoginModule over HTTP', () => {
       .set('x-forwarded-for', '203.0.113.9')
       .expect(200);
     const { sid, payloadUrl, schemeUrl, ttlMs, qrSvg } = init.body;
-    expect(payloadUrl).toContain(`target=${TARGET}`);
+    expect(payloadUrl).toContain(`site=${TARGET}`);
     expect(schemeUrl.startsWith('sk://auth?')).toBe(true);
     expect(ttlMs).toBe(120_000);
     expect(qrSvg).toContain('<svg');
@@ -231,7 +245,7 @@ describe('data requests (§ 4.6) over HTTP', () => {
       imports: [
         SkLoginModule.forRoot<User>({
           mnemonic: MNEMONIC,
-          target: { id: TARGET, publicUrl: 'https://api.example.com/' },
+          target: { site: TARGET, publicUrl: 'https://api.example.com/' },
           access: async (address): Promise<AccessDecision<User>> => ({ kind: 'granted', user: { address } }),
           // The owner is the page session: here a header, in a real service a cookie.
           dataRequest: { owner: ({ req }) => (req.headers['x-session'] ? ownerKey(req.headers['x-session']) : undefined) },
@@ -245,7 +259,7 @@ describe('data requests (§ 4.6) over HTTP', () => {
     try {
       const http = request(dataApp.getHttpServer());
       const target = await http.get('/api/sk/target').expect(200);
-      expect(target.body.requestUrl).toBe('https://api.example.com/api/sk/data');
+      expect(target.body.requestUrl).toBe('https://api.example.com/sk/request');
 
       await http.post('/api/sk/request/init').send({ kind: 'card-details' }).expect(401);
       await http.post('/api/sk/request/init').set('x-session', 'a').send({ kind: 'pin' }).expect(400);
@@ -255,7 +269,7 @@ describe('data requests (§ 4.6) over HTTP', () => {
       expect(init.body.qrSvg).toContain('<svg');
 
       const first = await http
-        .post('/api/sk/data')
+        .post('/sk/request')
         .set('content-type', 'text/plain')
         .send(
           encryptEnvelope({
@@ -273,7 +287,7 @@ describe('data requests (§ 4.6) over HTTP', () => {
 
       const values = { holder: 'IVAN IVANOV', pan: '4111 1111 1111 1111', exp: '12/29', cvv: '123' };
       await http
-        .post('/api/sk/data')
+        .post('/sk/request')
         .set('content-type', 'text/plain')
         .send(
           encryptEnvelope({

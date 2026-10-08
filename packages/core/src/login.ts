@@ -4,12 +4,14 @@
 //
 // Steps:
 //   1. The browser opens the sign-in popup; init issues a one-time sid and
-//      the payload string `https://secretkeeper.net/auth?v=1&sid=…&target=<id>`
-//      (a QR for another device, `sk://auth?…` for the same one). In hub
-//      mode (`hub` option) the payload is `target=<hub>&destination=<id>`:
-//      the app sends through the hub, which relays to this server.
+//      the payload string `https://secretkeeper.net/auth?v=1&sid=…&site=<host>&address=<sk1…>`
+//      (a QR for another device, `sk://auth?…` for the same one). The app
+//      takes the server address from the QR, like a contact's, and derives
+//      the endpoint from the host: `https://<host>/sk/login`. An embedded
+//      target (`target=<id>`) is the older form for apps built into Secret
+//      Keeper (payload.ts).
 //   2. The app POSTs a raw armored envelope (empty text, meta
-//      {type:"sk-login", data:{target,v,sid}}) to the server endpoint.
+//      {type:"sk-login", data:{target:<host or id>,v,sid}}) to the endpoint.
 //   3. The server decrypts it: a successful decrypt authenticates the
 //      sender address (static-static ECDH in the KEK). It replies with a
 //      challenge envelope carrying a one-time code (meta sk-login-challenge);
@@ -36,7 +38,7 @@
 // returns them as JSON `{error, message}`
 // (secret_keeper/docs/HANDOFF_LASHIN_SU_LOGIN_ERRORS.md).
 
-import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 
 import {
   CHALLENGE_V1,
@@ -50,7 +52,7 @@ import {
 import { decryptEnvelope, encryptEnvelope, extractArmor, senderAddressFromArmor } from './crypto/envelope.js';
 import { type IdentityKeys, keyCheckDigits } from './crypto/identity.js';
 import { type Lang, type Messages, mergeMessages } from './i18n.js';
-import { SK_LOGIN_VERSION, payloadQuery } from './payload.js';
+import { SK_LOGIN_VERSION, type Service, type ServiceOptions, resolveService } from './payload.js';
 import { MemoryPendingStore, type Pending, type PendingState, type PendingStore } from './store.js';
 
 export { SK_LOGIN_VERSION };
@@ -107,25 +109,11 @@ export type AccessDecision<User> =
 
 export type AccessDecider<User> = (address: string) => AccessDecision<User> | Promise<AccessDecision<User>>;
 
-export interface SkLoginOptions<User> {
+export interface SkLoginOptions<User> extends ServiceOptions {
   /** Server identity (deriveIdentityKeys from the mnemonic). Its sk1…
-   *  address is recorded in the target list of the Secret Keeper app. */
+   *  address goes to the QR: the app encrypts to it and checks the
+   *  challenge comes from it. */
   identity: IdentityKeys;
-  /** Target id: the service id in the app's `skLoginTargets` (direct mode)
-   *  or its `destination` in the hub registry (hub mode). Envelopes with
-   *  another target are rejected. */
-  target: string;
-  /** Hub mode: the hub's target id in the app (e.g. `auth_secretkeeper`).
-   *  The QR then carries `target=<hub>&destination=<target>`, the app sends
-   *  envelopes through the hub and the hub relays them to this server.
-   *  Nothing else changes: the inner envelope is still addressed to this
-   *  server and its meta still carries `target` as the service id. */
-  hub?: string;
-  /** sk1… address of the person who owns this service (their Secret Keeper
-   *  app). Only its hash is published in `targetInfo()` as `ownerHash`: the
-   *  hub catalog lets exactly this address register and edit the service
-   *  entry after signing in to the catalog. */
-  owner?: string;
   /** Who to let in. Called once per sign-in, after the code check. */
   access: AccessDecider<User>;
   /** Request store; process memory by default. */
@@ -158,36 +146,30 @@ export type EnvelopeReply =
 
 export type PollResult<User> = { state: PendingState | 'expired'; user?: User; reason?: string };
 
-/** What `GET target` publishes: the entry for the app's target list or the
- *  hub registry, readable by humans, agents and the hub catalog. */
+/** Public information about the service (`GET target`), readable by humans
+ *  and agents. The protocol does not need it: the app takes the address
+ *  from the QR. */
 export interface TargetInfo {
+  /** `site` or the embedded target id: what `meta.data.target` carries. */
   id: string;
-  /** Present in hub mode: the hub's target id the QR points at. */
-  hub?: string;
+  /** Present for a site. */
+  site?: string;
   v: number;
   /** The `login` endpoint. */
   url: string;
-  /** Present when the service accepts data requests: the `data` endpoint. */
+  /** Present when the service accepts data requests: the `request` endpoint. */
   requestUrl?: string;
   serverAddress: string;
   /** Check digits of the address: visual comparison with the app. */
   checkDigits: string;
-  /** Present when `owner` is configured: `ownerHash(owner)`. */
-  ownerHash?: string;
-}
-
-/** Hash of an owner address as published in `TargetInfo.ownerHash`: the
- *  catalog compares it with the hash of the signed-in address, the address
- *  itself stays private. */
-export function ownerHash(address: string): string {
-  return createHash('sha256').update(address).digest('base64url');
 }
 
 export class SkLogin<User = unknown> {
+  /** `site` or the embedded target id: what `meta.data.target` carries. */
   readonly target: string;
-  readonly hub: string | undefined;
-  readonly owner: string | undefined;
+  readonly site: string | undefined;
   readonly ttlMs: number;
+  private readonly service: Service;
   readonly messages: Record<Lang, Messages>;
   private readonly identity: IdentityKeys;
   private readonly access: AccessDecider<User>;
@@ -197,9 +179,9 @@ export class SkLogin<User = unknown> {
 
   constructor(options: SkLoginOptions<User>) {
     this.identity = options.identity;
-    this.target = options.target;
-    this.hub = options.hub || undefined;
-    this.owner = options.owner || undefined;
+    this.service = resolveService(options);
+    this.target = this.service.id;
+    this.site = this.service.site;
     this.access = options.access;
     this.ttlMs = options.ttlMs ?? DEFAULT_SID_TTL_MS;
     this.now = options.now ?? Date.now;
@@ -217,13 +199,12 @@ export class SkLogin<User = unknown> {
   targetInfo(loginUrl: string, requestUrl?: string): TargetInfo {
     return {
       id: this.target,
-      ...(this.hub ? { hub: this.hub } : {}),
+      ...(this.site ? { site: this.site } : {}),
       v: SK_LOGIN_VERSION,
       url: loginUrl,
       ...(requestUrl ? { requestUrl } : {}),
       serverAddress: this.identity.address,
       checkDigits: keyCheckDigits(this.identity.x25519Public),
-      ...(this.owner ? { ownerHash: ownerHash(this.owner) } : {}),
     };
   }
 
@@ -233,7 +214,7 @@ export class SkLogin<User = unknown> {
     const createdAt = this.now();
     const expiresAt = createdAt + this.ttlMs;
     await this.save({ sid, createdAt, expiresAt, state: 'new', ctx, codeAttempts: 0 });
-    const query = payloadQuery(sid, this.target, this.hub);
+    const query = this.service.query(sid, this.identity.address);
     return {
       sid,
       payloadUrl: `${SK_AUTH_URL}?${query}`,
@@ -414,7 +395,7 @@ export class SkLogin<User = unknown> {
     if (typeof meta?.type !== 'string' || typeof meta.data?.sid !== 'string') {
       throw new LoginError(400, 'bad-meta', 'envelope meta lacks type or sid');
     }
-    if (meta.data.target !== this.target || Number(meta.data.v) !== SK_LOGIN_VERSION) {
+    if (!this.service.accepts(meta.data.target) || Number(meta.data.v) !== SK_LOGIN_VERSION) {
       throw new LoginError(400, 'bad-meta', 'envelope is meant for another service or protocol version');
     }
     return { type: meta.type, sid: meta.data.sid, challenge: challengeVersion(meta.data.challenge) };

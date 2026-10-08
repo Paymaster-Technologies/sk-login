@@ -12,7 +12,6 @@ export {
   SK_LOGIN_VERSION,
   SkLogin,
   loginMeta,
-  ownerHash,
   type AccessDecider,
   type AccessDecision,
   type EnvelopeReply,
@@ -40,7 +39,7 @@ export {
   type Kind,
   type SkDataRequestOptions,
 } from './request.js';
-export { payloadQuery } from './payload.js';
+export { SITE_HOST_RE, resolveService, type Service, type ServiceOptions } from './payload.js';
 export {
   MemoryPendingStore,
   MemorySidStore,

@@ -14,14 +14,15 @@ import { SkLoginService } from './sk-login.service.js';
  *
  *   SkLoginModule.forRoot({
  *     mnemonic: process.env.SK_SERVER_MNEMONIC!,
- *     target: { id: 'myservice', publicUrl: 'https://api.example.com' },
+ *     target: { site: 'example.com' },
  *     access: async (address) => ({ kind: 'granted', user: { address } }),
  *     onAuthenticated: (user, { res }) => { res.cookie('session', issue(user)); },
  *   })
  *
- * Routes under `routePrefix` (`api/sk` by default): init, login, status, code,
- * target; with `dataRequest` also request/init, request/status, data.
- * `SkLoginService` is exported for your own providers.
+ * The app's endpoints `sk/login` and `sk/request` at the root (Secret Keeper
+ * derives them from the site host); the page's routes under `routePrefix`
+ * (`api/sk` by default): init, status, code, target; with `dataRequest` also
+ * request/init, request/status. `SkLoginService` is exported for your own providers.
  */
 @Module({})
 export class SkLoginModule {

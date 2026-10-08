@@ -21,11 +21,11 @@ import {
   type IdentityKeys,
   keyCheckDigits,
   loginMeta,
-  ownerHash,
   senderAddressFromArmor,
 } from '../src/index.js';
 
-const TARGET = 'demo';
+/** The site's host: the QR carries it with the server address, meta.data.target repeats it. */
+const TARGET = 'demo.example';
 
 // Fake client: does exactly what `sendSkLogin` in the app's
 // lib/services/sk_login.dart does: request, challenge parsing, code.
@@ -109,7 +109,7 @@ const access = async (address: string): Promise<AccessDecision<User>> => {
 };
 
 const make = (extra: Partial<ConstructorParameters<typeof SkLogin<User>>[0]> = {}) =>
-  new SkLogin<User>({ identity: server, target: TARGET, access, now: clock, ...extra });
+  new SkLogin<User>({ identity: server, site: TARGET, access, now: clock, ...extra });
 
 beforeEach(() => {
   now = 1_800_000_000_000;
@@ -141,47 +141,73 @@ describe('sign-in flow', () => {
     const url = new URL(init.payloadUrl);
     expect(url.origin + url.pathname).toBe('https://secretkeeper.net/auth');
     expect(url.searchParams.get('v')).toBe(String(SK_LOGIN_VERSION));
-    expect(url.searchParams.get('target')).toBe(TARGET);
+    // The site and its server address: the app derives https://<site>/sk/login and encrypts to the address.
+    expect(url.searchParams.get('site')).toBe(TARGET);
+    expect(url.searchParams.get('address')).toBe(server.address);
+    expect(url.searchParams.has('target')).toBe(false);
     expect(url.searchParams.get('sid')).toBe(init.sid);
     expect(init.schemeUrl).toBe(`sk://auth?${url.search.slice(1)}`);
     expect(init.ttlMs).toBe(DEFAULT_SID_TTL_MS);
     expect(init.expiresAt).toBe(now + DEFAULT_SID_TTL_MS);
   });
 
-  it('hub mode: the payload points at the hub and names this service as destination', async () => {
-    const viaHub = make({ hub: 'auth_secretkeeper' });
-    const init = await viaHub.init();
-    const url = new URL(init.payloadUrl);
-    expect(url.searchParams.get('target')).toBe('auth_secretkeeper');
-    expect(url.searchParams.get('destination')).toBe(TARGET);
-    expect(url.searchParams.get('sid')).toBe(init.sid);
-    // The envelopes the hub relays are unchanged: meta.target is still the service id.
-    const reply = await viaHub.handleEnvelope(app.request(init.sid));
-    expect(reply.kind).toBe('challenge');
-    expect((await viaHub.poll(init.sid)).state).toBe('challenged');
-    // An empty hub means direct mode.
-    const direct = await make({ hub: '' }).init();
-    expect(new URL(direct.payloadUrl).searchParams.get('target')).toBe(TARGET);
-    expect(new URL(direct.payloadUrl).searchParams.has('destination')).toBe(false);
+  it('the site host is normalised and must be in the form the app accepts', async () => {
+    expect(make({ site: ' Demo.Example ' }).target).toBe(TARGET);
+    for (const bad of ['https://demo.example', 'demo.example/sk', 'demo.example:8443', 'localhost', '10.0.0.1', 'demo', 'bücher.example']) {
+      expect(() => make({ site: bad })).toThrow(/bare ASCII host/);
+    }
+    expect(() => make({ site: 'xn--e1afmkfd.xn--p1ai' })).not.toThrow();
+    expect(() => new SkLogin<User>({ identity: server, access, now: clock })).toThrow(/exactly one/);
+    expect(() => make({ target: 'tetatet' })).toThrow(/exactly one/);
   });
 
-  it('targetInfo publishes the entry for the app list or the hub catalog', () => {
-    const plain = login.targetInfo('https://x.example/api/sk/login');
-    expect(plain).toEqual({
+  it('an embedded target keeps the older payload form', async () => {
+    const embedded = new SkLogin<User>({ identity: server, target: 'tetatet', access, now: clock });
+    const init = await embedded.init();
+    const url = new URL(init.payloadUrl);
+    expect(url.searchParams.get('target')).toBe('tetatet');
+    expect(url.searchParams.has('site')).toBe(false);
+    expect(url.searchParams.has('address')).toBe(false);
+    expect(embedded.target).toBe('tetatet');
+    expect(embedded.site).toBeUndefined();
+  });
+
+  it('legacyTargets: envelopes from app builds that still send the old embedded id are accepted', async () => {
+    const moved = make({ legacyTargets: ['demo'] });
+    const old = new FakeApp(app.keys, server.address);
+    const { sid } = await moved.init();
+    const request = (target: string) =>
+      encryptEnvelope({
+        sender: old.keys,
+        recipientAddress: server.address,
+        plaintext: '',
+        meta: loginMeta(target, 'sk-login', sid),
+      });
+    await failsWith(() => moved.handleEnvelope(request('other.example')), 400, 'bad-meta');
+    expect((await moved.handleEnvelope(request('demo'))).kind).toBe('challenge');
+    // Without the option the old id is just another service.
+    const strict = make();
+    const fresh = await strict.init();
+    await failsWith(
+      () =>
+        strict.handleEnvelope(
+          encryptEnvelope({ sender: old.keys, recipientAddress: server.address, plaintext: '', meta: loginMeta('demo', 'sk-login', fresh.sid) }),
+        ),
+      400,
+      'bad-meta',
+    );
+  });
+
+  it('targetInfo publishes the service information', () => {
+    expect(login.targetInfo('https://demo.example/sk/login', 'https://demo.example/sk/request')).toEqual({
       id: TARGET,
+      site: TARGET,
       v: SK_LOGIN_VERSION,
-      url: 'https://x.example/api/sk/login',
+      url: 'https://demo.example/sk/login',
+      requestUrl: 'https://demo.example/sk/request',
       serverAddress: server.address,
       checkDigits: keyCheckDigits(server.x25519Public),
     });
-    const owner = app.keys.address;
-    const full = make({ hub: 'auth_secretkeeper', owner }).targetInfo('https://x.example/l', 'https://x.example/d');
-    expect(full.hub).toBe('auth_secretkeeper');
-    expect(full.requestUrl).toBe('https://x.example/d');
-    // The owner address itself is never published, only its hash.
-    expect(full.ownerHash).toBe(ownerHash(owner));
-    expect(JSON.stringify(full)).not.toContain(owner);
-    expect(ownerHash(owner)).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it('two-step: request → challenge → code → authenticated once', async () => {

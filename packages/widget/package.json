@@ -1,6 +1,6 @@
 {
   "name": "@paymastech/sk-login-widget",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Secret Keeper popups for the browser: sign-in and data request (QR, status polling, manual code) without a framework",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/paymastech/sk-login.git", "directory": "packages/widget" },

@@ -17,7 +17,7 @@ import { SkLoginModule } from '@paymastech/sk-login-nestjs';
   imports: [
     SkLoginModule.forRoot<User>({
       mnemonic: process.env.SK_SERVER_MNEMONIC!,
-      target: { id: 'my-service', hub: 'auth_secretkeeper', owner: process.env.SK_OWNER_ADDRESS, publicUrl: 'https://api.example.com' },
+      target: { site: 'example.com' },   // the app posts to https://example.com/sk/login
       access: async (address) => {
         const user = await users.findByAddress(address);
         return user ? { kind: 'granted', user } : { kind: 'denied', reason: 'unknown-address' };

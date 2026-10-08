@@ -22,7 +22,7 @@ import {
   senderAddressFromArmor,
 } from '../src/index.js';
 
-const TARGET = 'demo';
+const TARGET = 'demo.example';
 
 // Fake app: sk-data-request, challenge parsing, sk-data with the code in
 // meta and the values as JSON in text (protocol § 4.6).
@@ -90,7 +90,7 @@ const stranger = ownerKey('session-token-b');
 beforeEach(() => {
   now = 1_800_000_000_000;
   server = deriveIdentityKeys(generateMnemonic());
-  sk = new SkDataRequest({ identity: server, target: TARGET, now: clock });
+  sk = new SkDataRequest({ identity: server, site: TARGET, now: clock });
   app = new FakeApp(deriveIdentityKeys(generateMnemonic()), server.address);
 });
 
@@ -119,7 +119,9 @@ describe('data request flow', () => {
     const url = new URL(init.payloadUrl);
     expect(url.origin + url.pathname).toBe('https://secretkeeper.net/request');
     expect(url.searchParams.get('v')).toBe('1');
-    expect(url.searchParams.get('target')).toBe(TARGET);
+    expect(url.searchParams.get('site')).toBe(TARGET);
+    expect(url.searchParams.get('address')).toBe(server.address);
+    expect(url.searchParams.has('target')).toBe(false);
     expect(url.searchParams.get('sid')).toBe(init.sid);
     expect(url.searchParams.get('kind')).toBe('card-details');
     expect(init.schemeUrl).toBe(`sk://request?${url.search.slice(1)}`);
@@ -127,18 +129,19 @@ describe('data request flow', () => {
     expect(init.ttlMs).toBe(DEFAULT_SID_TTL_MS);
   });
 
-  it('hub mode: the payload points at the hub and names this service as destination', async () => {
-    const viaHub = new SkDataRequest({ identity: server, target: TARGET, hub: 'auth_demo', now: clock });
-    const init = await viaHub.init('login-password', owner);
-    const url = new URL(init.payloadUrl);
-    expect(url.searchParams.get('target')).toBe('auth_demo');
-    expect(url.searchParams.get('destination')).toBe(TARGET);
-    expect(url.searchParams.get('kind')).toBe('login-password');
-    // Envelopes are unchanged: the inner meta still names this service.
-    const first = await viaHub.handleEnvelope(app.request(init.sid, 'login-password'));
-    const code = app.codeFrom((first as { armored: string }).armored, init.sid, 'login-password');
-    await viaHub.handleEnvelope(app.data(init.sid, 'login-password', code, samples['login-password']));
-    expect((await viaHub.poll(init.sid, owner)).state).toBe('filled');
+  it('legacyTargets: the old embedded id in meta is accepted during the transition', async () => {
+    const moved = new SkDataRequest({ identity: server, site: TARGET, legacyTargets: ['demo'], now: clock });
+    const init = await moved.init('login-password', owner);
+    const first = await moved.handleEnvelope(
+      encryptEnvelope({
+        sender: app.keys,
+        recipientAddress: server.address,
+        plaintext: '',
+        meta: requestMeta('demo', 'sk-data-request', init.sid, 'login-password'),
+      }),
+    );
+    expect(first.kind).toBe('challenge');
+    expect((await moved.poll(init.sid, owner)).state).toBe('challenged');
   });
 
   for (const kind of KIND_IDS) {

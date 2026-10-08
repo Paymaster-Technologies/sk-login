@@ -34,17 +34,18 @@ export interface SkLoginModuleOptions<User = unknown> {
   mnemonic?: string | string[];
   identity?: IdentityKeys;
   target: {
-    /** Service id: the entry in the Secret Keeper app's `skLoginTargets`
-     *  (direct mode) or the `destination` registered at the hub (hub mode). */
-    id: string;
-    /** Hub mode: the hub's target id in the app (e.g. `auth_secretkeeper`).
-     *  The QR becomes `target=<hub>&destination=<id>`; the hub relays the
-     *  app's envelopes to this server's `login` route. */
-    hub?: string;
-    /** sk1… address of the service owner (their Secret Keeper app). Its
-     *  hash goes to `GET target` as `ownerHash`; the hub catalog lets this
-     *  address register and edit the service entry. */
-    owner?: string;
+    /** The site's host (`example.com`): the QR carries it with the server
+     *  address, the app posts to `https://<host>/sk/login` and
+     *  `https://<host>/sk/request`, so this module must answer there
+     *  (the routes `sk/login` and `sk/request` are mounted at the root).
+     *  Lower-case ASCII, no scheme, port or path; IDN in punycode. */
+    site?: string;
+    /** An embedded target id instead of `site`: an app whose URL and
+     *  server address are built into Secret Keeper (e.g. `tetatet`). */
+    id?: string;
+    /** Other `meta.data.target` values to accept for a while: the embedded
+     *  id a site had before it moved to `site` (older app builds send it). */
+    legacyTargets?: string[];
     /** Public origin of the service for `GET target` (e.g. https://api.example.com);
      *  without it, built from the request's Host and X-Forwarded-Proto. */
     publicUrl?: string;
@@ -54,8 +55,8 @@ export interface SkLoginModuleOptions<User = unknown> {
   onAuthenticated?: OnAuthenticated<User>;
   /**
    * Data requests from the vault (protocol § 4.6): routes `request/init`,
-   * `request/status` and `data`. Without this option those routes answer
-   * 404 `not-configured` and `GET target` has no `requestUrl`.
+   * `request/status` and the app endpoint `sk/request`. Without this option
+   * those routes answer 404 `not-configured` and `GET target` has no `requestUrl`.
    */
   dataRequest?: DataRequestOptions;
   /** Request store; process memory by default (a single replica). */
@@ -95,5 +96,8 @@ export interface SkLoginModuleAsyncOptions<User = unknown> {
 }
 
 export const DEFAULT_ROUTE_PREFIX = 'api/sk';
+/** The app's endpoints, derived from the site host by convention (protocol § 4.5-4.6). */
+export const SK_LOGIN_ENDPOINT = 'sk/login';
+export const SK_REQUEST_ENDPOINT = 'sk/request';
 export const DEFAULT_MAX_BODY = 16 * 1024;
 export const DEFAULT_DATA_MAX_BODY = 64 * 1024;

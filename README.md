@@ -1,5 +1,9 @@
 # Sign in with Secret Keeper (SK login)
 
+Passwordless sign-in and form filling from the Secret Keeper vault for
+websites: Node core, NestJS module, browser widget, and a
+[.NET package](https://github.com/paymastech/sk-login-dotnet).
+
 Passwordless sign-in for a website: the user scans a QR code with the
 Secret Keeper app (or opens it with a button on the phone), confirms in
 the app, the site receives their `sk1…` address and decides who to let

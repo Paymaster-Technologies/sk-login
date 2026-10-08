@@ -1,7 +1,7 @@
 {
   "name": "@paymastech/sk-login-core",
   "version": "0.5.0",
-  "description": "Sign in with Secret Keeper: protocol core (envelopes, two-step challenge, pending store), framework-agnostic",
+  "description": "Sign in with Secret Keeper and fill forms from the vault: protocol core (envelopes, two-step challenge, data requests, pending store), framework-agnostic",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/paymastech/sk-login.git", "directory": "packages/core" },
   "type": "module",

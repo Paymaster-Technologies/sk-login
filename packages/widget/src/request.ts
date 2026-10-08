@@ -139,7 +139,7 @@ export function mountSkRequest(options: SkRequestWidgetOptions): SkRequestWidget
   // The record arrived: hand it to the page, the popup closes.
   const fill = (values: Record<string, string>, sender: string, filledAt: number) => {
     sheet.stop();
-    sheet.close();
+    sheet.done();
     // A confirmation between two polls skips the `challenged` state.
     markIntroDone();
     options.onFilled({ kind, values, sender, filledAt });
@@ -207,7 +207,11 @@ export function mountSkRequest(options: SkRequestWidgetOptions): SkRequestWidget
       sheet.open();
     },
     close: sheet.close,
-    destroy: sheet.destroy,
+    destroy() {
+      // A late `init` answer must not start polling for a removed sheet.
+      generation++;
+      sheet.destroy();
+    },
     element: sheet.root,
   };
 }

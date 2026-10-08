@@ -42,8 +42,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.4.0
-npm i $R/paymastech-sk-login-core-0.3.0.tgz $R/paymastech-sk-login-nestjs-0.3.0.tgz $R/paymastech-sk-login-widget-0.4.0.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.4.1
+npm i $R/paymastech-sk-login-core-0.3.0.tgz $R/paymastech-sk-login-nestjs-0.3.0.tgz $R/paymastech-sk-login-widget-0.4.1.tgz
 ```
 
 ```ts

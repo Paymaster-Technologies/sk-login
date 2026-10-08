@@ -93,15 +93,21 @@ describe('complete', () => {
     const complete = vi.fn(() => new Promise<Record<string, unknown>>((r) => (resolve = r)));
     const onSuccess = vi.fn();
     const onClose = vi.fn();
-    const w = mountSkLogin({ container, transport, pollMs: 1000, complete, onSuccess, onClose });
+    const w = mountSkLogin({ container, transport, pollMs: 1000, complete, onSuccess, onClose, recoveryLink: { text: 'Help', href: '/help' } });
+    const footer = () => w.element.querySelector('[data-r="footer"]')!;
     await vi.advanceTimersByTimeAsync(0);
+    expect(hidden(footer())).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     expect(view(w.element)).toBe('challenged');
+    // The recovery link stays while waiting for the confirmation.
+    expect(hidden(footer())).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     expect(complete).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledWith('sid-1', { token: 't-1' });
     expect(view(w.element)).toBe('completing');
     expect(hidden(w.element.querySelector('[data-r="ttl"]')!)).toBe(true);
+    // Not while the server finishes the sign-in.
+    expect(hidden(footer())).toBe(true);
     // Polling stopped: no second completion even if the server keeps answering.
     await vi.advanceTimersByTimeAsync(3000);
     expect(complete).toHaveBeenCalledTimes(1);
@@ -115,7 +121,9 @@ describe('complete', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(onSuccess).toHaveBeenCalledWith({ token: 't-1', session: 's-9' });
     expect(hidden(w.element)).toBe(true);
+    // The close after a result is told apart from the person's.
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('result');
   });
 
   it('a rejection is shown as an error view with the message, no retry, no onSuccess', async () => {
@@ -125,11 +133,13 @@ describe('complete', () => {
     });
     const onSuccess = vi.fn();
     const onCompleteError = vi.fn();
-    const w = mountSkLogin({ container, transport, pollMs: 1000, complete, onSuccess, onCompleteError });
+    const w = mountSkLogin({ container, transport, pollMs: 1000, complete, onSuccess, onCompleteError, recoveryLink: { text: 'Help', href: '/help' } });
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(1000);
     expect(view(w.element)).toBe('failed');
     expect(w.element.querySelector('[data-r="failed-text"]')!.textContent).toBe('Browser binding failed');
+    // The recovery link is there on the error too.
+    expect(hidden(w.element.querySelector('[data-r="footer"]')!)).toBe(false);
     expect(onCompleteError).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5000);
     expect(complete).toHaveBeenCalledTimes(1);
@@ -199,8 +209,9 @@ describe('manual code', () => {
 });
 
 describe('cancel', () => {
-  it('close() with a request in flight calls transport.cancel(sid) and ignores late answers', async () => {
-    const cancel = vi.fn(async () => {});
+  it('close() with a request in flight waits for transport.cancel(sid), then closes; late answers are ignored', async () => {
+    let resolve!: () => void;
+    const cancel = vi.fn(() => new Promise<void>((r) => (resolve = r)));
     const transport = fakeTransport([{ state: 'new' }], { cancel });
     const onSuccess = vi.fn();
     const onClose = vi.fn();
@@ -208,17 +219,59 @@ describe('cancel', () => {
     await vi.advanceTimersByTimeAsync(0);
     w.close();
     expect(cancel).toHaveBeenCalledWith('sid-1');
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // The sheet waits for the server: still open, on the waiting view, no onClose yet.
+    expect(hidden(w.element)).toBe(false);
+    expect(view(w.element)).toBe('cancelling');
+    expect(onClose).not.toHaveBeenCalled();
     const calls = transport.status.mock.calls.length;
     await vi.advanceTimersByTimeAsync(3000);
     expect(transport.status.mock.calls.length).toBe(calls);
-    expect(onSuccess).not.toHaveBeenCalled();
-    // A second close does not cancel twice.
+    // A second close while the cancel runs does not cancel twice.
     w.close();
     expect(cancel).toHaveBeenCalledTimes(1);
+    resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hidden(w.element)).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('user');
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it('is not sent after authenticated, and its failure goes to onCancelError', async () => {
+  it('a failed cancel keeps the sheet open with the error; "Try again" runs the cancel again', async () => {
+    const cancel = vi
+      .fn<(sid: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('Server is busy'))
+      .mockResolvedValueOnce(undefined);
+    const onCancelError = vi.fn();
+    const onClose = vi.fn();
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }], { cancel }), pollMs: 1000, onSuccess: () => {}, onCancelError, onClose });
+    await vi.advanceTimersByTimeAsync(0);
+    w.close();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(view(w.element)).toBe('cancelFailed');
+    expect(w.element.querySelector('[data-r="cancel-failed-text"]')!.textContent).toBe('Server is busy');
+    expect(w.element.querySelector<HTMLElement>('[data-r="cancel-retry"]')!.textContent).toBe('Попробовать снова');
+    expect(hidden(w.element)).toBe(false);
+    expect(onCancelError).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    w.element.querySelector<HTMLElement>('[data-r="cancel-retry"]')!.click();
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenLastCalledWith('sid-1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hidden(w.element)).toBe(true);
+    expect(onClose).toHaveBeenCalledWith('user');
+  });
+
+  it('without transport.cancel the sheet closes at once', async () => {
+    const onClose = vi.fn();
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }]), pollMs: 1000, onSuccess: () => {}, onClose });
+    await vi.advanceTimersByTimeAsync(0);
+    w.close();
+    expect(hidden(w.element)).toBe(true);
+    expect(onClose).toHaveBeenCalledWith('user');
+  });
+
+  it('is not sent after authenticated', async () => {
     const cancel = vi.fn(async () => {
       throw new Error('500');
     });
@@ -233,15 +286,7 @@ describe('cancel', () => {
     expect(cancel).not.toHaveBeenCalled();
     resolve();
     await vi.advanceTimersByTimeAsync(0);
-
-    // A fresh widget: cancel fails, the error is reported, the sheet is closed anyway.
-    const w2 = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }], { cancel }), pollMs: 1000, onSuccess: () => {}, onCancelError });
-    await vi.advanceTimersByTimeAsync(0);
-    w2.close();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(cancel).toHaveBeenCalledTimes(1);
-    expect(onCancelError).toHaveBeenCalledTimes(1);
-    expect(hidden(w2.element)).toBe(true);
+    expect(onCancelError).not.toHaveBeenCalled();
   });
 
   it('after the server reported expired there is nothing to cancel', async () => {
@@ -251,6 +296,48 @@ describe('cancel', () => {
     expect(hidden(w.element.querySelector('[data-r="expired"]')!)).toBe(false);
     w.close();
     expect(cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('destroy', () => {
+  it('a late init answer does not start polling for a removed widget', async () => {
+    let resolve!: (v: InitResponse) => void;
+    const transport = fakeTransport([{ state: 'new' }], { init: vi.fn(() => new Promise<InitResponse>((r) => (resolve = r))) });
+    const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(0);
+    w.destroy();
+    resolve(INIT);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(transport.status).not.toHaveBeenCalled();
+    expect(document.body.contains(w.element)).toBe(false);
+  });
+
+  it('a complete that resolves after destroy does not call onSuccess', async () => {
+    let resolve!: (v: Record<string, unknown>) => void;
+    const complete = vi.fn(() => new Promise<Record<string, unknown>>((r) => (resolve = r)));
+    const onSuccess = vi.fn();
+    const onClose = vi.fn();
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'authenticated' }]), pollMs: 1000, complete, onSuccess, onClose });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(view(w.element)).toBe('completing');
+    w.destroy();
+    resolve({ session: 's' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('a cancel that settles after destroy is silent', async () => {
+    let reject!: (e: Error) => void;
+    const cancel = vi.fn(() => new Promise<void>((_, r) => (reject = r)));
+    const onCancelError = vi.fn();
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }], { cancel }), pollMs: 1000, onSuccess: () => {}, onCancelError });
+    await vi.advanceTimersByTimeAsync(0);
+    w.close();
+    w.destroy();
+    reject(new Error('500'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onCancelError).not.toHaveBeenCalled();
   });
 });
 
@@ -265,10 +352,27 @@ describe('dialog mode', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(dialog.open).toBe(true);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(dialog.open).toBe(false);
     expect(cancel).toHaveBeenCalledWith('sid-1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dialog.open).toBe(false);
     w.destroy();
     expect(document.body.contains(dialog)).toBe(false);
+  });
+
+  it('a final view reopened in the dialog does not report a close to the page', async () => {
+    const onClose = vi.fn();
+    const onCancelled = vi.fn();
+    const w = mountSkLogin({ transport: fakeTransport([{ state: 'cancelled' }]), pollMs: 1000, onSuccess: () => {}, onClose, onCancelled });
+    w.open();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onCancelled).toHaveBeenCalledTimes(1);
+    expect(view(w.element)).toBe('cancelled');
+    expect((w.element as HTMLDialogElement).open).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+    w.element.querySelector<HTMLElement>('[data-view="cancelled"] [data-r="close"]')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('user');
   });
 });
 

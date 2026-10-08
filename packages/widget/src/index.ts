@@ -30,5 +30,5 @@ export {
   type SkRequestWidget,
   type SkRequestWidgetOptions,
 } from './request.js';
-export { type Lang, type SheetOptions, type SheetTexts, sheetTexts } from './sheet.js';
+export { type CloseReason, type Lang, type SheetOptions, type SheetTexts, sheetTexts } from './sheet.js';
 export { SK_LOGO } from './logo.js';

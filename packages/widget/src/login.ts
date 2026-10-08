@@ -9,8 +9,9 @@
 // (own routes and response formats), `complete` finishes the sign-in on the
 // server after `authenticated` (a second factor that binds the browser and
 // issues the session), `manualCode: false` hides the code entry,
-// `transport.cancel` tells the server when the person gives up,
-// `recoveryLink` adds "No access to Secret Keeper?" under the QR, and
+// `transport.cancel` tells the server when the person gives up (the sheet
+// waits for the answer and stays with an error when it fails),
+// `recoveryLink` adds "No access to Secret Keeper?" under every view, and
 // `container` renders the sheet inline instead of a modal dialog.
 
 import {
@@ -41,6 +42,10 @@ export interface Texts extends SheetTexts {
   completing: string;
   /** `complete` failed and the error has no message of its own. */
   completeFailed: string;
+  /** The waiting view while `transport.cancel` runs. */
+  cancelling: string;
+  /** `transport.cancel` failed and the error has no message of its own. */
+  cancelFailed: string;
 }
 
 export const texts: Record<Lang, Texts> = {
@@ -58,6 +63,8 @@ export const texts: Record<Lang, Texts> = {
     timeout: 'Время ожидания истекло: подтверждение из Secret Keeper не пришло. Попробуйте войти ещё раз.',
     completing: 'Завершаем вход…',
     completeFailed: 'Не удалось завершить вход. Попробуйте ещё раз.',
+    cancelling: 'Отменяем запрос…',
+    cancelFailed: 'Не удалось отменить запрос. Попробуйте ещё раз.',
   },
   en: {
     ...sheetTexts.en,
@@ -73,6 +80,8 @@ export const texts: Record<Lang, Texts> = {
     timeout: 'Time ran out: no confirmation came from Secret Keeper. Try signing in again.',
     completing: 'Finishing the sign-in…',
     completeFailed: 'Could not finish the sign-in. Please try again.',
+    cancelling: 'Cancelling the request…',
+    cancelFailed: 'Could not cancel the request. Please try again.',
   },
 };
 
@@ -115,7 +124,8 @@ export interface SkLoginTransport {
   status(sid: string): Promise<StatusResponse>;
   /** The code the app showed to the person. Without it the code entry is not offered. */
   submitCode?(sid: string, code: string): Promise<CodeResult>;
-  /** The person closed the widget before the sign-in finished: tell the server. */
+  /** The person closed the widget before the sign-in finished: tell the server.
+   *  The sheet waits for it; a rejection keeps the sheet open with the error and "Try again". */
   cancel?(sid: string): Promise<void>;
 }
 
@@ -148,11 +158,11 @@ export interface SkLoginWidgetOptions extends SheetOptions {
   complete?: (sid: string, extra: Record<string, unknown>) => Promise<Record<string, unknown> | void>;
   /** `complete` rejected; the error is already on the screen. */
   onCompleteError?: (error: unknown) => void;
-  /** `transport.cancel` rejected (the sheet is already closed). Logged to the console when unset. */
+  /** `transport.cancel` rejected; the error is already on the screen with "Try again". */
   onCancelError?: (error: unknown) => void;
   /** Offer the manual code entry after the scan. Default `true`; forced off without `transport.submitCode`. */
   manualCode?: boolean;
-  /** A link under the QR, e.g. "No access to Secret Keeper?". */
+  /** A link under every view (the QR, the waiting, the errors), e.g. "No access to Secret Keeper?". */
   recoveryLink?: RecoveryLink;
   /** Inline mode (`container`): request the QR right away on mount. Default `true`. */
   autoStart?: boolean;
@@ -160,7 +170,9 @@ export interface SkLoginWidgetOptions extends SheetOptions {
 
 export interface SkLoginWidget {
   open(): void;
+  /** As the close button: with a request in flight the server is told first (`transport.cancel`). */
   close(): void;
+  /** Remove the sheet; answers that arrive later are dropped, no callbacks fire. */
   destroy(): void;
   /** The dialog, or the inline root when `container` is set. */
   readonly element: HTMLElement;
@@ -243,9 +255,11 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
         t.close,
         'denied-text',
       ) +
-      infoViewHtml('failed', ERROR_ICON, t.completeFailed, t.close, 'failed-text'),
-    infoViews: ['denied', 'failed'],
-    noTtlViews: ['completing'],
+      infoViewHtml('failed', ERROR_ICON, t.completeFailed, t.close, 'failed-text') +
+      `<section data-view="cancelling" class="skl-hidden">${waitingHtml(logo, t.cancelling)}</section>` +
+      infoViewHtml('cancelFailed', ERROR_ICON, t.cancelFailed, t.retry, 'cancel-failed-text', 'cancel-retry'),
+    infoViews: ['denied', 'failed', 'cancelFailed'],
+    busyViews: ['completing', 'cancelling'],
   });
   const transport = options.transport ?? httpTransport(sheet.api, sheet.fetchOpts);
   const manualCode = options.manualCode !== false && typeof transport.submitCode === 'function';
@@ -254,11 +268,14 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   const codeHint = sheet.el('code-hint');
   const deniedText = sheet.el('denied-text');
   const failedText = sheet.el('failed-text');
+  const cancelFailedText = sheet.el('cancel-failed-text');
   codeInput.id = `${sheet.uid}-code`;
   sheet.el('code-label').setAttribute('for', codeInput.id);
 
   let sid = '';
   let pollTimer: number | undefined;
+  /** Bumped by every new request, by a cancel and by `destroy`: an async
+   *  continuation that sees another generation belongs to the past and stops. */
   let generation = 0;
   /** The request reached `authenticated`: no cancel, no second completion. */
   let finishing = false;
@@ -275,7 +292,7 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
     stopPoll();
     if (!options.complete) {
       sheet.stop();
-      sheet.close();
+      sheet.done();
       options.onSuccess(extra);
       return;
     }
@@ -290,7 +307,7 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
       sheet.lock(false);
       if (mine !== generation) return;
       sheet.stop();
-      sheet.close();
+      sheet.done();
       options.onSuccess({ ...extra, ...(more ?? {}) });
     } catch (e) {
       sheet.lock(false);
@@ -381,20 +398,46 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   };
   sheet.onRefresh(start);
 
-  // The person closed the sheet with a request in flight: the server is told
-  // (when the transport knows how), the late answers are ignored. After
+  // The person closed the sheet with a request in flight: the late answers
+  // are ignored and, when the transport knows how, the server is told first.
+  // The sheet waits for that answer and closes after it; a failure stays on
+  // the screen with "Try again", which runs the cancel again. After
   // `authenticated` nothing is cancelled: the sign-in already happened.
+  const cancelOnServer = async (current: string) => {
+    const mine = generation;
+    sheet.stop();
+    sheet.lock(true);
+    sheet.show('cancelling');
+    try {
+      await transport.cancel!(current);
+      sheet.lock(false);
+      if (mine !== generation) return;
+      sid = '';
+      sheet.close();
+    } catch (e) {
+      sheet.lock(false);
+      if (mine !== generation) return;
+      cancelFailedText.textContent = (e instanceof Error && e.message) || t.cancelFailed;
+      sheet.reopen('cancelFailed');
+      options.onCancelError?.(e);
+    }
+  };
   sheet.onBeforeClose(() => {
     const current = sid;
-    sid = '';
-    if (!current || finishing) return;
+    if (!current || finishing) {
+      sid = '';
+      return;
+    }
     generation++;
     stopPoll();
-    transport.cancel?.(current).catch((e) => {
-      if (options.onCancelError) options.onCancelError(e);
-      else console.warn('[sk-login-widget] cancel failed', e);
-    });
+    if (!transport.cancel) {
+      sid = '';
+      return;
+    }
+    void cancelOnServer(current);
+    return false;
   });
+  sheet.el('cancel-retry').addEventListener('click', () => sheet.close());
 
   const submitCode = async () => {
     const code = codeInput.value.trim();
@@ -449,7 +492,10 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
   return {
     open: sheet.open,
     close: sheet.close,
-    destroy: sheet.destroy,
+    destroy() {
+      generation++;
+      sheet.destroy();
+    },
     element: sheet.root,
   };
 }

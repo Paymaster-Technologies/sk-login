@@ -62,7 +62,7 @@ Common to both popups:
 | `apiBase` | `/api/sk` | module route prefix (may be an absolute URL of another origin, then see `credentials`) |
 | `lang` | `ru` | `ru` or `en` |
 | `onCancelled()` | | the user declined the request in the app |
-| `onClose()` | | the popup was closed by the user |
+| `onClose(reason)` | | the popup closed: `'user'` (the close button, Esc, the scrim, "Close" on a final view, the page's `close()`) or `'result'` (it closed itself after a result; `onSuccess` / `onFilled` follows right away) |
 | `theme` | by `prefers-color-scheme` | force `light` or `dark` |
 | `logoUrl` | built-in | logo in the center of the QR |
 | `skSiteUrl` | `https://secretkeeper.net` | where the "install Secret Keeper" link points |
@@ -80,15 +80,21 @@ Common to both popups:
 | `transport` | the module's routes under `apiBase` | own server calls: `init()`, `status(sid)`, `submitCode?(sid, code)`, `cancel?(sid)` (see "Own routes") |
 | `complete(sid, extra)` | | finish the sign-in on the server after `authenticated`; the widget waits, does not close and does not call it twice; `onSuccess` only after it resolves; a rejection is shown as an error view (`error.message`, or `texts.completeFailed`) and is not retried |
 | `onCompleteError(error)` | | `complete` rejected (the error is already on the screen) |
-| `onCancelError(error)` | `console.warn` | `transport.cancel` rejected (the sheet is already closed) |
+| `onCancelError(error)` | | `transport.cancel` rejected; the error is already on the screen with "Try again" |
 | `manualCode` | `true` | offer the code entry after the scan; forced off when the transport has no `submitCode` |
-| `recoveryLink` | | `{ text, href?, onClick? }`: a link under the QR, e.g. "No access to Secret Keeper?" |
+| `recoveryLink` | | `{ text, href?, onClick? }`: a link under every view (the QR, the waiting, the errors), e.g. "No access to Secret Keeper?"; hidden only while `complete` or `transport.cancel` runs |
 | `autoStart` | `true` | inline mode: request the QR right away on mount |
 
 Returns `{ open(), close(), destroy(), element }`. `close()` with a request
-in flight calls `transport.cancel(sid)` (when the transport has it) and
-ignores answers to that sid; after `authenticated` nothing is cancelled.
-`close()` is ignored while `complete` runs.
+in flight ignores further answers to that sid and, when the transport has
+`cancel`, calls `transport.cancel(sid)` first: the sheet shows a waiting
+view and closes once it resolves (`onClose('user')`); a rejection keeps
+the sheet open with the error message (`error.message`, or
+`texts.cancelFailed`) and "Try again", which runs the cancel again, and
+calls `onCancelError`. After `authenticated` nothing is cancelled.
+`close()` is ignored while `complete` or the cancel runs. `destroy()`
+removes the sheet; answers that arrive later (`init`, `complete`,
+`cancel`) are dropped and no callbacks fire.
 
 ### Own routes (second factor)
 

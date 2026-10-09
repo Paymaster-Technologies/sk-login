@@ -1,8 +1,10 @@
 # @paymastech/sk-login-widget
 
 Secret Keeper popups for the browser. `mountSkLogin` is the sign-in: a QR
-code, a "with the app" button on the same device, waiting for
-confirmation, manual code entry, refusal and timeout screens.
+code with the time left drawn as a shrinking ring around the logo (red in
+the last seconds, like the TOTP card in the app), a "with the app" button
+on the same device, waiting for confirmation, manual code entry, refusal
+and timeout screens.
 `mountSkRequest` is "fill from Secret Keeper": the same sheet asking the
 app for a vault record (login and password, card details, personal data)
 and handing the values to the page. A bottom sheet on narrow screens, a

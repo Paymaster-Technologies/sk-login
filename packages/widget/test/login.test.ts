@@ -105,7 +105,6 @@ describe('complete', () => {
     expect(complete).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledWith('sid-1', { token: 't-1' });
     expect(view(w.element)).toBe('completing');
-    expect(hidden(w.element.querySelector('[data-r="ttl"]')!)).toBe(true);
     // Not while the server finishes the sign-in.
     expect(hidden(footer())).toBe(true);
     // Polling stopped: no second completion even if the server keeps answering.
@@ -384,11 +383,20 @@ describe('server time', () => {
     const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {} });
     await vi.advanceTimersByTimeAsync(0);
     const ttl = w.element.querySelector<HTMLElement>('[data-r="ttl"]')!;
-    expect(ttl.textContent).toBe('2:00');
+    const left = w.element.querySelector<HTMLElement>('[data-r="ttl-left"]')!;
+    expect(ttl.getAttribute('aria-label')).toBe('2:00');
+    // A full ring at the start.
+    expect(parseFloat(left.style.strokeDashoffset)).toBe(0);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(ttl.textContent).toBe('0:31');
+    expect(ttl.getAttribute('aria-label')).toBe('0:31');
+    // The ring follows the server deadline: 31 s left of the 32 s the request now lasts.
+    expect(parseFloat(left.style.strokeDashoffset)).toBeGreaterThan(0);
+    expect(ttl.classList.contains('soon')).toBe(false);
+    await vi.advanceTimersByTimeAsync(22_000);
+    expect(ttl.getAttribute('aria-label')).toBe('0:09');
+    expect(ttl.classList.contains('soon')).toBe(true);
     // Half a minute later the request is over by the server clock, long before the local two minutes.
-    await vi.advanceTimersByTimeAsync(32_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(hidden(w.element.querySelector('[data-r="expired"]')!)).toBe(false);
   });
 
@@ -396,7 +404,7 @@ describe('server time', () => {
     const transport = fakeTransport([{ state: 'new' }], { init: vi.fn(async () => ({ ...INIT, expiresInMs: 45_000 })) });
     const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {} });
     await vi.advanceTimersByTimeAsync(0);
-    expect(w.element.querySelector<HTMLElement>('[data-r="ttl"]')!.textContent).toBe('0:45');
+    expect(w.element.querySelector<HTMLElement>('[data-r="ttl"]')!.getAttribute('aria-label')).toBe('0:45');
   });
 });
 

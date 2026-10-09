@@ -75,9 +75,7 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-close svg { width: 22px; height: 22px; }
 .skl-close:hover { filter: brightness(1.08); }
 .skl-title { margin: 0; font-size: 1.25rem; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skl-spacer { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; }
-.skl-ttl { font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--skl-secondary); }
-.skl-ttl.soon { color: var(--skl-danger); }
+.skl-spacer { width: 44px; height: 44px; }
 .skl-body { padding-top: 12px; }
 .skl-secondary { color: var(--skl-secondary); }
 .skl-hint { margin: 4px 0 0; font-size: 0.9rem; line-height: 1.45; text-wrap: balance; }
@@ -93,11 +91,19 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 }
 .skl-qr svg { width: 100%; height: 100%; display: block; }
 .skl .skl-qr-logo {
-  position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; padding: 5px; box-sizing: content-box;
+  position: absolute; top: 50%; left: 50%; width: 44px; height: 44px; padding: 4px; box-sizing: content-box;
   transform: translate(-50%, -50%); background: #fff; border-radius: 50%;
 }
+.skl .skl-qr-ring {
+  position: absolute; top: 50%; left: 50%; width: 64px; height: 64px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+.skl-ring-bg { fill: #fff; }
+.skl-ring-track { fill: none; stroke: rgba(0, 0, 0, 0.1); stroke-width: 3; }
+.skl-ring-left { fill: none; stroke: var(--skl-primary); stroke-width: 3; transition: stroke-dashoffset 1s linear; }
+.skl-qr-ring.soon .skl-ring-left { stroke: var(--skl-danger); }
 .skl-qr.loading { background: var(--skl-surface-high); }
-.skl-qr.loading > span:first-child, .skl-qr.loading .skl-qr-logo { visibility: hidden; }
+.skl-qr.loading > span:first-child, .skl-qr.loading .skl-qr-logo, .skl-qr.loading .skl-qr-ring { visibility: hidden; }
 .skl-qr-spinner { display: none; position: absolute; top: 50%; left: 50%; translate: -50% -50%; }
 .skl-qr.loading .skl-qr-spinner {
   display: block; width: 32px; height: 32px; border-radius: 50%;

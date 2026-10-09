@@ -1,7 +1,8 @@
 // The sheet shared by the sign-in and the data request popups: a <dialog>
 // styled like the Secret Keeper app sheets (a bottom sheet on a narrow
 // screen, a centered card on a wide one), the QR block with the app button, the TTL
-// countdown in the bar, the nested "QR expired / offline" sheet with
+// countdown as a shrinking ring around the logo in the QR (like the TOTP
+// card in the app), the nested "QR expired / offline" sheet with
 // "Refresh", the "app did not open" hint and the final info views. The
 // owner (login.ts, request.ts) supplies the flow-specific views, the init
 // request and the status polling.
@@ -150,6 +151,9 @@ export type ExpireReason = 'expired' | 'offline';
 const OPEN_APP_GRACE_MS = 2000;
 /** The last seconds of the countdown are highlighted. */
 const SOON_MS = 10_000;
+/** Radius of the countdown ring in the QR, in viewBox units (see the ring markup). */
+const RING_R = 29;
+const RING_LENGTH = 2 * Math.PI * RING_R;
 
 export const SCAN_ICON =
   '<svg class="skl-hint-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm8-12v8h8V3h-8zm6 6h-4V5h4v4zm-6 4h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm4 0h2v2h-2v-2zm2 2h2v2h-2v-2zm-4 0h2v2h-2v-2zm2-6h2v2h-2v-2zm2 2h2v2h-2v-2z"/></svg>';
@@ -258,7 +262,7 @@ export function createSheet(cfg: SheetConfig): Sheet {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
     <h2 class="skl-title" id="${uid}-title">${esc(cfg.title)}</h2>
-    <span class="skl-spacer"><span class="skl-ttl skl-hidden" data-r="ttl" aria-live="off"></span></span>
+    <span class="skl-spacer"></span>
   </div>
   <div class="skl-body">
     <section data-view="scan">
@@ -266,6 +270,11 @@ export function createSheet(cfg: SheetConfig): Sheet {
       <p class="skl-secondary skl-hint">${esc(t.scan1)}<a href="${esc(skSite)}" target="_blank" rel="noopener">${esc(t.scanLink)}</a>${esc(t.scan2)}${SCAN_ICON}${esc(t.scan3)}</p>
       <a class="skl-qr loading" href="#" data-r="qr-link" aria-label="QR">
         <span data-r="qr"></span>
+        <svg class="skl-qr-ring" viewBox="0 0 64 64" role="timer" aria-live="off" data-r="ttl">
+          <circle class="skl-ring-bg" cx="32" cy="32" r="32"/>
+          <circle class="skl-ring-track" cx="32" cy="32" r="${RING_R}"/>
+          <circle class="skl-ring-left" cx="32" cy="32" r="${RING_R}" stroke-dasharray="${RING_LENGTH}" data-r="ttl-left"/>
+        </svg>
         <img class="skl-qr-logo" src="${esc(logo)}" alt="" width="44" height="44">
         <span class="skl-qr-spinner" aria-hidden="true"></span>
       </a>
@@ -297,6 +306,7 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const openApp = el<HTMLAnchorElement>('open');
   const noApp = el('noapp');
   const ttl = el('ttl');
+  const ttlLeft = el<HTMLElement & SVGCircleElement>('ttl-left');
   const expired = el('expired');
   const expiredTitle = el('expired-title');
   const footer = root.querySelector<HTMLElement>('[data-r="footer"]');
@@ -327,14 +337,17 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const alive = () => Date.now() <= deadlineAt;
   const late = () => Date.now() - startedAt >= ttlMs / 2;
 
-  const syncTtl = () => {
-    ttl.classList.toggle('skl-hidden', infoViews.has(current) || busyViews.has(current) || loading() || isExpired());
-  };
+  // The ring around the logo in the QR shrinks from full at the start (or
+  // the last renew / sync) to nothing at the deadline; the last seconds in
+  // the danger color, like the TOTP card in the app. The time left is also
+  // the ring's accessible name.
   const drawTtl = () => {
     const left = Math.max(0, deadlineAt - Date.now());
+    const total = Math.max(1, deadlineAt - startedAt);
     const sec = Math.ceil(left / 1000);
-    ttl.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    ttl.setAttribute('aria-label', `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`);
     ttl.classList.toggle('soon', left <= SOON_MS);
+    ttlLeft.style.strokeDashoffset = String(RING_LENGTH * (1 - Math.min(1, left / total)));
   };
   const renew = () => {
     startedAt = Date.now();
@@ -354,13 +367,12 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const show = (name: string) => {
     current = name;
     for (const v of views) v.classList.toggle('skl-hidden', v.dataset.view !== name);
-    // Final views are an info sheet: no bar (title, close, countdown), only
+    // Final views are an info sheet: no bar (title, close), only
     // an icon, a text and "Close". The button is not focused: Chrome draws
     // a ring on it, and Esc and the scrim close the window anyway.
     const info = infoViews.has(name);
     root.classList.toggle('info', info);
     footer?.classList.toggle('skl-hidden', busyViews.has(name));
-    syncTtl();
     if (info && !inline) (doc.activeElement as HTMLElement | null)?.blur();
   };
 
@@ -422,7 +434,6 @@ export function createSheet(cfg: SheetConfig): Sheet {
     if (reason === 'expired' && current === 'challenged') return reopen('timeout');
     expiredTitle.textContent = reason === 'offline' ? t.offline : t.expired;
     expired.classList.remove('skl-hidden');
-    syncTtl();
     el('refresh').focus();
   };
 
@@ -442,7 +453,6 @@ export function createSheet(cfg: SheetConfig): Sheet {
     qrLink.classList.remove('loading');
     renew();
     if (typeof init.expiresInMs === 'number') sync(init.expiresInMs);
-    syncTtl();
     if (pendingOpen) {
       pendingOpen = false;
       openApp.click();

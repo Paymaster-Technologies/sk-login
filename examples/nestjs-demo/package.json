@@ -1,7 +1,7 @@
 {
   "name": "nestjs-demo",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Minimal NestJS app with SkLoginModule and the browser widget",
   "type": "module",
   "scripts": {
@@ -11,9 +11,9 @@
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
-    "@paymastech/sk-login-core": "0.6.1",
-    "@paymastech/sk-login-nestjs": "0.6.1",
-    "@paymastech/sk-login-widget": "0.6.1",
+    "@paymastech/sk-login-core": "0.6.2",
+    "@paymastech/sk-login-nestjs": "0.6.2",
+    "@paymastech/sk-login-widget": "0.6.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   }

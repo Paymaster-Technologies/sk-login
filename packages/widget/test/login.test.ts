@@ -477,15 +477,15 @@ describe('onRestart', () => {
 });
 
 describe('hideTitle', () => {
-  it('inline: hides the title in the bar', async () => {
+  it('inline: the whole bar goes, the page owns the heading', async () => {
     const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }]), hideTitle: true, onSuccess: () => {} });
     await vi.advanceTimersByTimeAsync(0);
-    expect(hidden(w.element.querySelector('.skl-title')!)).toBe(true);
+    expect(w.element.classList.contains('skl-no-bar')).toBe(true);
   });
 
-  it('dialog: the title stays', async () => {
+  it('dialog: the bar with the title stays', async () => {
     const w = mountSkLogin({ transport: fakeTransport([{ state: 'new' }]), hideTitle: true, onSuccess: () => {} });
-    expect(hidden(w.element.querySelector('.skl-title')!)).toBe(false);
+    expect(w.element.classList.contains('skl-no-bar')).toBe(false);
   });
 });
 

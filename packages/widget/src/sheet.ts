@@ -110,7 +110,7 @@ export interface SheetOptions {
   pollMs?: number;
   /** Render inline into this element instead of a modal dialog. */
   container?: HTMLElement;
-  /** Inline only: no title in the bar (the page has its own heading). Inline has no close button anyway. */
+  /** Inline only: the page has its own heading, so the bar (title, close button slot) is not rendered. */
   hideTitle?: boolean;
 }
 
@@ -270,10 +270,10 @@ export function createSheet(cfg: SheetConfig): Sheet {
       <p class="skl-secondary skl-hint">${esc(t.scan1)}<a href="${esc(skSite)}" target="_blank" rel="noopener">${esc(t.scanLink)}</a>${esc(t.scan2)}${SCAN_ICON}${esc(t.scan3)}</p>
       <a class="skl-qr loading" href="#" data-r="qr-link" aria-label="QR">
         <span data-r="qr"></span>
-        <svg class="skl-qr-ring" viewBox="0 0 64 64" role="timer" aria-live="off" data-r="ttl">
-          <circle class="skl-ring-bg" cx="32" cy="32" r="32"/>
-          <circle class="skl-ring-track" cx="32" cy="32" r="${RING_R}"/>
-          <circle class="skl-ring-left" cx="32" cy="32" r="${RING_R}" stroke-dasharray="${RING_LENGTH}" data-r="ttl-left"/>
+        <svg class="skl-qr-ring" viewBox="0 0 72 72" role="timer" aria-live="off" data-r="ttl">
+          <circle class="skl-ring-bg" cx="36" cy="36" r="36"/>
+          <circle class="skl-ring-track" cx="36" cy="36" r="${RING_R}"/>
+          <circle class="skl-ring-left" cx="36" cy="36" r="${RING_R}" stroke-dasharray="${RING_LENGTH}" data-r="ttl-left"/>
         </svg>
         <img class="skl-qr-logo" src="${esc(logo)}" alt="" width="44" height="44">
         <span class="skl-qr-spinner" aria-hidden="true"></span>
@@ -312,8 +312,8 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const footer = root.querySelector<HTMLElement>('[data-r="footer"]');
   // Inline: the final views offer a new attempt instead of closing.
   if (inline) for (const b of root.querySelectorAll<HTMLElement>('.skl-info [data-r="close"]')) b.textContent = t.retry;
-  // Inline: the page may own the heading.
-  if (inline && options.hideTitle) root.querySelector('.skl-title')!.classList.add('skl-hidden');
+  // Inline: the page may own the heading; the bar then has nothing left to show.
+  if (inline && options.hideTitle) root.classList.add('skl-no-bar');
 
   let current = 'scan';
   let ttlTimer: number | undefined;

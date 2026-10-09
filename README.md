@@ -53,8 +53,8 @@ of the [release](https://github.com/Paymaster-Technologies/sk-login/releases/lat
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/Paymaster-Technologies/sk-login/releases/download/v0.6.1
-npm i $R/paymastech-sk-login-core-0.6.1.tgz $R/paymastech-sk-login-nestjs-0.6.1.tgz $R/paymastech-sk-login-widget-0.6.1.tgz
+R=https://github.com/Paymaster-Technologies/sk-login/releases/download/v0.6.2
+npm i $R/paymastech-sk-login-core-0.6.2.tgz $R/paymastech-sk-login-nestjs-0.6.2.tgz $R/paymastech-sk-login-widget-0.6.2.tgz
 ```
 
 ```ts

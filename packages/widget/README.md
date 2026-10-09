@@ -71,7 +71,7 @@ Common to both popups:
 | `headers`, `credentials` | `same-origin` | for fetch calls to the API (CSRF header, cookies for another origin) |
 | `pollMs` | 2000 | `status` polling period |
 | `container` | | render inline into this element instead of a modal dialog (see "Inline") |
-| `hideTitle` | `false` | inline only: no title in the bar, the page has its own heading |
+| `hideTitle` | `false` | inline only: no bar at all (the title and the empty close slot), the page has its own heading |
 
 `mountSkLogin`:
 
@@ -150,8 +150,8 @@ backdrop, no close button, no Esc, the width follows the container (up to
 `open()`). On the final views (declined, timed out, refused, failed) the
 button is "Try again" and starts a new request (or calls `onRestart` when
 it is set); `close()` hides the sheet and `open()` shows it again with a
-new request. `hideTitle` drops the title in the bar when the page has its
-own heading. `element` is the inline
+new request. `hideTitle` drops the bar (the title row) when the page has
+its own heading. `element` is the inline
 root (`div.skl.skl-inline`), otherwise the `<dialog>`.
 
 `mountSkRequest`:

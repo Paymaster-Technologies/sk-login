@@ -1,6 +1,6 @@
 {
   "name": "@paymastech/sk-login-nestjs",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Sign in with Secret Keeper and fill forms from the vault, for NestJS: SkLoginModule with init/status/code/target and request/init, request/status endpoints plus the app's /sk/login and /sk/request",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/Paymaster-Technologies/sk-login.git", "directory": "packages/nestjs" },
@@ -20,7 +20,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --sourcemap"
   },
   "dependencies": {
-    "@paymastech/sk-login-core": "0.6.1",
+    "@paymastech/sk-login-core": "0.6.2",
     "qrcode": "^1.5.4"
   },
   "peerDependencies": {

@@ -66,7 +66,8 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-inner { padding: 12px 16px 16px; position: relative; }
 .skl-handle { display: none; width: 32px; height: 4px; border-radius: 2px; margin: 2px auto 10px; background: var(--skl-secondary); }
 .skl-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; min-height: 44px; }
-.skl.info .skl-bar { display: none; }
+.skl.info .skl-bar, .skl-no-bar .skl-bar { display: none; }
+.skl-no-bar .skl-body { padding-top: 4px; }
 .skl-close {
   width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
@@ -95,12 +96,12 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
   transform: translate(-50%, -50%); background: #fff; border-radius: 50%;
 }
 .skl .skl-qr-ring {
-  position: absolute; top: 50%; left: 50%; width: 64px; height: 64px;
+  position: absolute; top: 50%; left: 50%; width: 72px; height: 72px;
   transform: translate(-50%, -50%) rotate(-90deg);
 }
 .skl-ring-bg { fill: #fff; }
 .skl-ring-track { fill: none; stroke: rgba(0, 0, 0, 0.1); stroke-width: 3; }
-.skl-ring-left { fill: none; stroke: var(--skl-primary); stroke-width: 3; transition: stroke-dashoffset 1s linear; }
+.skl-ring-left { fill: none; stroke: var(--skl-primary); stroke-width: 3; }
 .skl-qr-ring.soon .skl-ring-left { stroke: var(--skl-danger); }
 .skl-qr.loading { background: var(--skl-surface-high); }
 .skl-qr.loading > span:first-child, .skl-qr.loading .skl-qr-logo, .skl-qr.loading .skl-qr-ring { visibility: hidden; }

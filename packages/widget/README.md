@@ -61,13 +61,15 @@ Common to both popups:
 | `apiBase` | `/api/sk` | module route prefix (may be an absolute URL of another origin, then see `credentials`) |
 | `lang` | `ru` | `ru` or `en` |
 | `onCancelled()` | | the user declined the request in the app |
-| `onClose(reason)` | | the popup closed: `'user'` (the close button, Esc, the scrim, "Close" on a final view, the page's `close()`) or `'result'` (it closed itself after a result; `onSuccess` / `onFilled` follows right away) |
+| `onClose(reason)` | | the popup closed: `'user'` (the close button, Esc, the scrim, "Close" on a final view, the page's `close()`), `'result'` (it closed itself after a result; `onSuccess` / `onFilled` follows right away) or `'restart'` (see `onRestart`) |
+| `onRestart()` | | the person asked for a new attempt ("Refresh" on an expired QR, "Try again" on a final view inline); when set, the sheet hides (`onClose('restart')`) and the page makes the next request itself (`open()`), for a flow that needs the person's input first; without it the widget requests a new QR on its own |
 | `theme` | by `prefers-color-scheme` | force `light` or `dark` |
 | `logoUrl` | built-in | logo in the center of the QR |
 | `skSiteUrl` | `https://secretkeeper.net` | where the "install Secret Keeper" link points |
 | `headers`, `credentials` | `same-origin` | for fetch calls to the API (CSRF header, cookies for another origin) |
 | `pollMs` | 2000 | `status` polling period |
 | `container` | | render inline into this element instead of a modal dialog (see "Inline") |
+| `hideTitle` | `false` | inline only: no title in the bar, the page has its own heading |
 
 `mountSkLogin`:
 
@@ -80,6 +82,7 @@ Common to both popups:
 | `complete(sid, extra)` | | finish the sign-in on the server after `authenticated`; the widget waits, does not close and does not call it twice; `onSuccess` only after it resolves; a rejection is shown as an error view (`error.message`, or `texts.completeFailed`) and is not retried |
 | `onCompleteError(error)` | | `complete` rejected (the error is already on the screen) |
 | `onCancelError(error)` | | `transport.cancel` rejected; the error is already on the screen with "Try again" |
+| `onFailed(message)` | | `transport.status` answered `failed`: the request is over for the service's own reason, the view shows `message` (or `texts.completeFailed`) and polling stops |
 | `manualCode` | `true` | offer the code entry after the scan; forced off when the transport has no `submitCode` |
 | `recoveryLink` | | `{ text, href?, onClick? }`: a link under every view (the QR, the waiting, the errors), e.g. "No access to Secret Keeper?"; hidden only while `complete` or `transport.cancel` runs |
 | `autoStart` | `true` | inline mode: request the QR right away on mount |
@@ -123,9 +126,14 @@ const login = mountSkLogin({
 ```
 
 `init` must return what the module's `POST init` returns (`sid`,
-`schemeUrl`, `ttlMs`, `qrSvg`, `payloadUrl`); `status` returns `{ state,
-reason?, message?, ...extra }` with the module's states (`new`,
-`challenged`, `authenticated`, `denied`, `cancelled`, `expired`);
+`schemeUrl`, `ttlMs`, `qrSvg`, `payloadUrl`, plus `expiresInMs` when the
+deadline is shorter than `ttlMs`); `status` returns `{ state, reason?,
+message?, expiresInMs?, ...extra }` with the module's states (`new`,
+`challenged`, `authenticated`, `denied`, `cancelled`, `expired`) or
+`failed` with a `message` when the service ends the request for a reason
+of its own (the site session is gone, a limit was hit): a final view, no
+more polling. With `expiresInMs` on `new` and `challenged` the countdown
+follows the server clock instead of the local `ttlMs`;
 `submitCode` returns `{ kind: 'ok', extra? } | { kind: 'wrong' } | { kind:
 'denied', reason?, message? } | { kind: 'stale' }`. A rejected `init` or
 `submitCode` shows "could not reach the site"; a rejected `status` is
@@ -138,8 +146,10 @@ With `container` the sheet is rendered into the given element: no
 backdrop, no close button, no Esc, the width follows the container (up to
 480 px). The QR is requested on mount (`autoStart: false` to wait for
 `open()`). On the final views (declined, timed out, refused, failed) the
-button is "Try again" and starts a new request; `close()` hides the sheet
-and `open()` shows it again with a new request. `element` is the inline
+button is "Try again" and starts a new request (or calls `onRestart` when
+it is set); `close()` hides the sheet and `open()` shows it again with a
+new request. `hideTitle` drops the title in the bar when the page has its
+own heading. `element` is the inline
 root (`div.skl.skl-inline`), otherwise the `<dialog>`.
 
 `mountSkRequest`:
@@ -160,5 +170,7 @@ Classes are prefixed with `skl-`, colors come from variables on `dialog.skl`:
 `--skl-bg`, `--skl-item`, `--skl-text`, `--skl-secondary`, `--skl-primary`,
 `--skl-primary-soft`, `--skl-separator`, `--skl-surface-high`,
 `--skl-danger`, `--skl-font`, `--skl-mono`. Override them on `:root` or on `.skl`.
+The variables are the supported surface; the `skl-*` class names and the
+markup are internal and may change between releases.
 Below 600 px the dialog becomes a bottom sheet with a handle and a
 full-width action button.

@@ -296,7 +296,7 @@ describe('data request flow', () => {
     const code = await challenge(sid, 'login-password');
     const other = new FakeApp(deriveIdentityKeys(generateMnemonic()), server.address);
     await failsWith(() => sk.handleEnvelope(other.cancel(sid)), 409, 'in-progress');
-    expect(await sk.poll(sid, owner)).toEqual({ state: 'challenged' });
+    expect(await sk.poll(sid, owner)).toEqual({ state: 'challenged', expiresInMs: expect.any(Number) });
     expect(await sk.handleEnvelope(app.data(sid, 'login-password', code, samples['login-password']))).toEqual({
       kind: 'filled',
       address: app.keys.address,

@@ -53,8 +53,8 @@ of the [release](https://github.com/paymastech/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.5.0
-npm i $R/paymastech-sk-login-core-0.5.0.tgz $R/paymastech-sk-login-nestjs-0.5.0.tgz $R/paymastech-sk-login-widget-0.5.0.tgz
+R=https://github.com/paymastech/sk-login/releases/download/v0.6.0
+npm i $R/paymastech-sk-login-core-0.6.0.tgz $R/paymastech-sk-login-nestjs-0.6.0.tgz $R/paymastech-sk-login-widget-0.6.0.tgz
 ```
 
 ```ts
@@ -70,6 +70,7 @@ interface User { id: string; address: string }
       mnemonic: process.env.SK_SERVER_MNEMONIC!,   // 12 BIP-39 words, see "Secrets"
       target: { site: 'example.com' },           // the public host: the app posts to https://example.com/sk/login
       // Who to let in: called once after confirmation, receives the sk1… address
+      // and { sid, ctx } for a decision tied to the page's request (a 2FA step of a known session)
       access: async (address) => {
         const user = await users.findByAddress(address);
         return user ? { kind: 'granted', user } : { kind: 'denied', reason: 'unknown-address' };
@@ -243,12 +244,12 @@ The page's routes live under the prefix `api/sk` (`routePrefix` in
 
 | Method and path | Caller | Request | Response |
 | --- | --- | --- | --- |
-| `POST init` | browser | empty | `{ sid, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }` |
-| `GET status?sid=` | browser | | `{ state, reason?, ...extra }` where `state` is `new`, `challenged`, `authenticated`, `denied`, `cancelled`, `expired` |
+| `POST init` | browser | empty | `{ sid, payloadUrl, schemeUrl, expiresAt, ttlMs, expiresInMs, qrSvg? }` |
+| `GET status?sid=` | browser | | `{ state, expiresInMs? }` for `new` and `challenged` (the time left by the server clock; the widget's countdown follows it), `{ state, reason?, message? }` for `denied`, `{ state, ...extra }` for `authenticated`, `{ state }` for `cancelled` and `expired` |
 | `POST code` | browser | `{ sid, code }` | `{ ok: true, ...extra }`, `403 { denied: true, reason, message }` or `4xx { error, message }` |
 | `GET target` | humans, agents | | `{ id, site?, v, url, requestUrl?, serverAddress, checkDigits }` |
-| `POST request/init` | browser | `{ kind }` | `{ sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs, qrSvg? }`, `401 { error: 'unauthorized' }`, `400 { error: 'bad-kind' }`; with `dataRequest` only |
-| `GET request/status?sid=` | browser | | `{ state }` or `{ state: 'filled', values, sender, filledAt }`; with `dataRequest` only |
+| `POST request/init` | browser | `{ kind }` | `{ sid, kind, payloadUrl, schemeUrl, expiresAt, ttlMs, expiresInMs, qrSvg? }`, `401 { error: 'unauthorized' }`, `400 { error: 'bad-kind' }`; with `dataRequest` only |
+| `GET request/status?sid=` | browser | | `{ state, expiresInMs }` for `new` and `challenged`, `{ state }` for `cancelled` and `expired`, `{ state: 'filled', values, sender, filledAt }`; with `dataRequest` only |
 | `POST login`, `POST data` | older app builds | as `/sk/login` and `/sk/request` | aliases from the time the endpoints were per-service entries in the app |
 
 Without `dataRequest` these routes answer `404 { error: 'not-configured' }`.
@@ -288,7 +289,7 @@ request is marked `used`, and further `status` calls for this sid answer
 | `target.id` | one of `site`/`id` | an embedded target id instead of a site (an app built into Secret Keeper, e.g. `tetatet`) |
 | `target.legacyTargets` | | other `meta.data.target` values to accept for a while (the embedded id a site had before `site`) |
 | `target.publicUrl` | from `Host` and `X-Forwarded-Proto` | origin for `GET target` |
-| `access(address)` | required | `{ kind: 'granted', user }` or `{ kind: 'denied', reason, message? }` |
+| `access(address, { sid, ctx })` | required | `{ kind: 'granted', user }` or `{ kind: 'denied', reason, message? }`; `sid` ties the decision to the page's request (a 2FA step started for a known session), `ctx` is the browser context from `init` |
 | `onAuthenticated(user, { req, res })` | | session, cookie, token; the return value goes into the JSON for the browser |
 | `store` | `MemoryPendingStore` | request store, see "Multiple replicas" |
 | `ttlMs` | 120000 | sid lifetime |

@@ -106,7 +106,16 @@ export type AccessDecision<User> =
   | { kind: 'granted'; user: User }
   | { kind: 'denied'; reason: string; message?: Partial<Record<Lang, string>> };
 
-export type AccessDecider<User> = (address: string) => AccessDecision<User> | Promise<AccessDecision<User>>;
+/** The request the decision is about: lets the service tie the proven
+ *  address to the account the request was created for (second factor,
+ *  binding) and refuse right here, so the app shows the refusal too. */
+export interface AccessRequest {
+  sid: string;
+  /** The browser that opened the request, as given to `init`. */
+  ctx?: RequestContext;
+}
+
+export type AccessDecider<User> = (address: string, request: AccessRequest) => AccessDecision<User> | Promise<AccessDecision<User>>;
 
 export interface SkLoginOptions<User> extends ServiceOptions {
   /** Server identity (deriveIdentityKeys from the mnemonic). Its sk1…
@@ -134,8 +143,11 @@ export interface InitResult {
   payloadUrl: string;
   /** The same query on the custom scheme, for the button on the same device. */
   schemeUrl: string;
+  /** Deadline by the server clock. */
   expiresAt: number;
   ttlMs: number;
+  /** Time left by the server clock; equals `ttlMs` here, see `PollResult`. */
+  expiresInMs: number;
 }
 
 export type EnvelopeReply =
@@ -143,7 +155,11 @@ export type EnvelopeReply =
   | { kind: 'code-accepted'; address: string }
   | { kind: 'cancelled' };
 
-export type PollResult<User> = { state: PendingState | 'expired'; user?: User; reason?: string };
+/** `expiresInMs` comes with an open request (`new`, `challenged`): time left
+ *  by the server clock, so the browser's countdown follows the server (the
+ *  TTL restarts on `challenged`) without comparing clocks. A service with
+ *  its own, shorter deadline passes the smaller value through. */
+export type PollResult<User> = { state: PendingState | 'expired'; user?: User; reason?: string; expiresInMs?: number };
 
 /** Public information about the service (`GET target`), readable by humans
  *  and agents. The protocol does not need it: the app takes the address
@@ -220,6 +236,7 @@ export class SkLogin<User = unknown> {
       schemeUrl: `${SK_AUTH_SCHEME_URL}?${query}`,
       expiresAt,
       ttlMs: this.ttlMs,
+      expiresInMs: this.ttlMs,
     };
   }
 
@@ -332,6 +349,7 @@ export class SkLogin<User = unknown> {
       return { state: 'authenticated', user: entry.user };
     }
     if (entry.state === 'denied') return { state: 'denied', reason: entry.denied };
+    if (open) return { state: entry.state, expiresInMs: entry.expiresAt - this.now() };
     return { state: entry.state };
   }
 
@@ -354,7 +372,7 @@ export class SkLogin<User = unknown> {
 
   /** Admission of a proven address: the user, or 403 with a text in `lang`. */
   private async admit(entry: Pending<User>, address: string, lang: Lang): Promise<User> {
-    const decision = await this.access(address);
+    const decision = await this.access(address, { sid: entry.sid, ctx: entry.ctx });
     if (decision.kind === 'granted') return decision.user;
     entry.state = 'denied';
     entry.denied = decision.reason;

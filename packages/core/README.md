@@ -15,6 +15,7 @@ import { SkLogin, identityFromMnemonic, contextFromHeaders, langFromAcceptLangua
 const sk = new SkLogin<User>({
   identity: identityFromMnemonic(process.env.SK_SERVER_MNEMONIC!),
   site: 'example.com', // the public host: in the QR with the server address; the app posts to https://example.com/sk/login
+  // (address, { sid, ctx }): the request's sid and browser context, for a decision tied to the page's request
   access: async (address) => (await users.has(address) ? { kind: 'granted', user: await users.get(address) } : { kind: 'denied', reason: 'unknown' }),
 });
 
@@ -29,8 +30,8 @@ try {
   if (e instanceof LoginError) res.status(e.status).json({ error: e.code, message: e.message });
 }
 
-// GET status (browser)
-const { state, user, reason } = await sk.poll(sid);   // authenticated -> set a session for user
+// GET status (browser); expiresInMs comes with new/challenged for the page's countdown
+const { state, user, reason, expiresInMs } = await sk.poll(sid);   // authenticated -> set a session for user
 
 // POST code (browser, manual entry)
 const user = await sk.submitCode(sid, code);          // LoginError on a wrong code or a refusal

@@ -14,6 +14,7 @@ export {
   loginMeta,
   type AccessDecider,
   type AccessDecision,
+  type AccessRequest,
   type EnvelopeReply,
   type InitResult,
   type PollResult,

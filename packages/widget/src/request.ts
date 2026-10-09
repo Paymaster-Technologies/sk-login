@@ -83,7 +83,8 @@ export interface SkRequestWidget {
 }
 
 type Poll =
-  | { state: 'new' | 'challenged' | 'cancelled' | 'expired' }
+  | { state: 'new' | 'challenged'; expiresInMs?: number }
+  | { state: 'cancelled' | 'expired' }
   | { state: 'filled'; values: Record<string, string>; sender: string; filledAt: number };
 
 /** The intro is shown until the first scan from this browser: a scan proves
@@ -167,6 +168,7 @@ export function mountSkRequest(options: SkRequestWidgetOptions): SkRequestWidget
         markIntroDone();
         sheet.show('challenged');
       }
+      if ('expiresInMs' in poll && typeof poll.expiresInMs === 'number') sheet.sync(poll.expiresInMs);
     } catch {
       // The network blinked: the next tick will retry.
     }

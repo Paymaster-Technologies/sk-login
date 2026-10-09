@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
   type AccessDecision,
+  type AccessRequest,
   CHALLENGE_V2,
   type ContextItem,
   DEFAULT_SID_TTL_MS,
@@ -97,11 +98,13 @@ let login: SkLogin<User>;
 let app: FakeApp;
 let allowed: Map<string, User>;
 let decisions: string[];
+let requests: AccessRequest[];
 
 const userOf = (address: string): User => ({ address, status: 'active' });
 
-const access = async (address: string): Promise<AccessDecision<User>> => {
+const access = async (address: string, request: AccessRequest): Promise<AccessDecision<User>> => {
   decisions.push(address);
+  requests.push(request);
   const user = allowed.get(address);
   if (!user) return { kind: 'denied', reason: 'unknown' };
   if (user.status === 'blocked') return { kind: 'denied', reason: 'blocked', message: { ru: 'Blocked (ru)' } };
@@ -118,6 +121,7 @@ beforeEach(() => {
   app = new FakeApp(deriveIdentityKeys(generateMnemonic()), server.address);
   allowed = new Map([[app.keys.address, userOf(app.keys.address)]]);
   decisions = [];
+  requests = [];
 });
 
 const failsWith = async (fn: () => Promise<unknown>, status: number, code?: string): Promise<LoginError> => {
@@ -149,6 +153,7 @@ describe('sign-in flow', () => {
     expect(init.schemeUrl).toBe(`sk://auth?${url.search.slice(1)}`);
     expect(init.ttlMs).toBe(DEFAULT_SID_TTL_MS);
     expect(init.expiresAt).toBe(now + DEFAULT_SID_TTL_MS);
+    expect(init.expiresInMs).toBe(DEFAULT_SID_TTL_MS);
   });
 
   it('the site host is normalised and must be in the form the app accepts', async () => {
@@ -225,6 +230,32 @@ describe('sign-in flow', () => {
     expect(await login.poll(sid)).toEqual({ state: 'authenticated', user: userOf(app.keys.address) });
     expect(await state(sid)).toBe('expired');
     expect(decisions).toEqual([app.keys.address]);
+  });
+
+  it('tells the access decider which request the address proved: sid and the browser context', async () => {
+    const ctx: RequestContext = { ip: '203.0.113.9', ua: 'vitest' };
+    const { sid } = await login.init(ctx);
+    const first = await login.handleEnvelope(app.request(sid));
+    await login.handleEnvelope(app.codeEnvelope(sid, app.codeFrom(armoredOf(first), sid)));
+    expect(requests).toEqual([{ sid, ctx }]);
+
+    // A second factor: the decider refuses an address that is not the one the request was made for.
+    const strict = make({ access: (address, r) => (r.sid === sid ? { kind: 'granted', user: userOf(address) } : { kind: 'denied', reason: 'wrong-account' }) });
+    const { sid: sid2 } = await strict.init();
+    const ch = await strict.handleEnvelope(app.request(sid2));
+    const err = await failsWith(() => strict.handleEnvelope(app.codeEnvelope(sid2, app.codeFrom(armoredOf(ch), sid2))), 403, 'access-denied');
+    expect(err.reason).toBe('wrong-account');
+    expect(await strict.poll(sid2)).toEqual({ state: 'denied', reason: 'wrong-account' });
+  });
+
+  it('poll reports the time left by the server clock while the request is open', async () => {
+    const { sid } = await login.init();
+    now += 30_000;
+    expect(await login.poll(sid)).toEqual({ state: 'new', expiresInMs: DEFAULT_SID_TTL_MS - 30_000 });
+    await login.handleEnvelope(app.request(sid));
+    now += 10_000;
+    // The TTL restarted on the scan: the browser learns it from expiresInMs, not from its own clock.
+    expect(await login.poll(sid)).toEqual({ state: 'challenged', expiresInMs: DEFAULT_SID_TTL_MS - 10_000 });
   });
 
   it('refuses an unknown address at the code step with a localized message', async () => {

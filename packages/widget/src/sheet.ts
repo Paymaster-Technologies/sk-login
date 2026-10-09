@@ -22,7 +22,7 @@ import { ensureStyles } from './styles.js';
 export type Lang = 'ru' | 'en';
 
 /** Why the sheet closed: the person or the page (`user`), or a result that the owner reports right after (`result`). */
-export type CloseReason = 'user' | 'result';
+export type CloseReason = 'user' | 'result' | 'restart';
 
 /** Texts common to both popups. */
 export interface SheetTexts {
@@ -87,6 +87,14 @@ export interface SheetOptions {
    * after a result and `onSuccess` / `onFilled` follows right away.
    */
   onClose?: (reason: CloseReason) => void;
+  /**
+   * The person asked for a new attempt ("Refresh" on an expired QR, "Try
+   * again" on a final view inline). When set, the sheet closes
+   * (`onClose('restart')`) and the page takes over instead of the widget
+   * requesting a new QR itself: for a flow where a new request needs the
+   * person's input first (a password, a choice).
+   */
+  onRestart?: () => void;
   /** Logo in the center of the QR and in the waiting view; defaults to the built-in Secret Keeper logo. */
   logoUrl?: string;
   /** The "Secret Keeper" link in the hint. */
@@ -101,6 +109,8 @@ export interface SheetOptions {
   pollMs?: number;
   /** Render inline into this element instead of a modal dialog. */
   container?: HTMLElement;
+  /** Inline only: no title in the bar (the page has its own heading). Inline has no close button anyway. */
+  hideTitle?: boolean;
 }
 
 /** What `init` returns for the QR block (both flows). */
@@ -108,6 +118,8 @@ export interface QrInit {
   sid: string;
   schemeUrl: string;
   ttlMs: number;
+  /** Time left by the server clock, when it differs from `ttlMs` (a shorter deadline of the service). */
+  expiresInMs?: number;
   qrSvg?: string;
 }
 
@@ -191,6 +203,8 @@ export interface Sheet {
   showQr(init: QrInit): void;
   /** The app scanned: the server restarted the TTL. */
   renew(): void;
+  /** The server said how much time is left: the countdown follows it, no clock comparison. */
+  sync(expiresInMs: number): void;
   alive(): boolean;
   /** Half the TTL has passed without an answer. */
   late(): boolean;
@@ -288,12 +302,16 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const footer = root.querySelector<HTMLElement>('[data-r="footer"]');
   // Inline: the final views offer a new attempt instead of closing.
   if (inline) for (const b of root.querySelectorAll<HTMLElement>('.skl-info [data-r="close"]')) b.textContent = t.retry;
+  // Inline: the page may own the heading.
+  if (inline && options.hideTitle) root.querySelector('.skl-title')!.classList.add('skl-hidden');
 
   let current = 'scan';
   let ttlTimer: number | undefined;
   let openTimer: number | undefined;
   let startedAt = 0;
   let ttlMs = 0;
+  /** When the request runs out, by this clock; moved by `sync`. */
+  let deadlineAt = 0;
   let pendingOpen = false;
   let inlineOpen = false;
   let locked = false;
@@ -306,23 +324,31 @@ export function createSheet(cfg: SheetConfig): Sheet {
   const isOpen = () => (dialog ? dialog.open : inlineOpen);
   const loading = () => qrLink.classList.contains('loading');
   const isExpired = () => !expired.classList.contains('skl-hidden');
-  const alive = () => Date.now() - startedAt <= ttlMs;
+  const alive = () => Date.now() <= deadlineAt;
   const late = () => Date.now() - startedAt >= ttlMs / 2;
 
   const syncTtl = () => {
     ttl.classList.toggle('skl-hidden', infoViews.has(current) || busyViews.has(current) || loading() || isExpired());
   };
   const drawTtl = () => {
-    const left = Math.max(0, ttlMs - (Date.now() - startedAt));
+    const left = Math.max(0, deadlineAt - Date.now());
     const sec = Math.ceil(left / 1000);
     ttl.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
     ttl.classList.toggle('soon', left <= SOON_MS);
   };
   const renew = () => {
     startedAt = Date.now();
+    deadlineAt = startedAt + ttlMs;
     if (ttlTimer) window.clearInterval(ttlTimer);
     drawTtl();
     ttlTimer = window.setInterval(drawTtl, 1000);
+  };
+  // Below a second the difference is network latency, not a new deadline.
+  const sync = (expiresInMs: number) => {
+    const next = Date.now() + Math.max(0, expiresInMs);
+    if (Math.abs(next - deadlineAt) < 1000) return;
+    deadlineAt = next;
+    drawTtl();
   };
 
   const show = (name: string) => {
@@ -415,6 +441,7 @@ export function createSheet(cfg: SheetConfig): Sheet {
     openApp.href = init.schemeUrl;
     qrLink.classList.remove('loading');
     renew();
+    if (typeof init.expiresInMs === 'number') sync(init.expiresInMs);
     syncTtl();
     if (pendingOpen) {
       pendingOpen = false;
@@ -451,8 +478,15 @@ export function createSheet(cfg: SheetConfig): Sheet {
     if (!isOpen()) return;
     hide('result');
   };
-  // Inline: "Try again" on a final view is a new request, not a close.
-  const infoButton = () => (inline ? refresh() : close());
+  // A new attempt: the page's `onRestart` when it wants the control, else a new request.
+  const restart = () => {
+    if (options.onRestart) {
+      hide('restart');
+      options.onRestart();
+    } else refresh();
+  };
+  // Inline: "Try again" on a final view is a new attempt, not a close.
+  const infoButton = () => (inline ? restart() : close());
 
   openApp.addEventListener('click', (e) => {
     if (loading()) {
@@ -468,7 +502,7 @@ export function createSheet(cfg: SheetConfig): Sheet {
   });
   el('close').addEventListener('click', close);
   for (const b of root.querySelectorAll<HTMLElement>('.skl-info [data-r="close"]')) b.addEventListener('click', infoButton);
-  el('refresh').addEventListener('click', () => refresh());
+  el('refresh').addEventListener('click', restart);
   if (dialog) {
     // Click on the scrim: inside .skl-inner the target is a descendant, outside it is the dialog itself.
     dialog.addEventListener('click', (e) => {
@@ -523,6 +557,7 @@ export function createSheet(cfg: SheetConfig): Sheet {
     loading: loadingView,
     showQr,
     renew,
+    sync,
     alive,
     late,
     isExpired,

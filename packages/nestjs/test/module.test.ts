@@ -102,12 +102,12 @@ describe('SkLoginModule over HTTP', () => {
     const sid = init.body.sid;
     const ch = await http.post('/sk/login').set('content-type', 'text/plain').send(envelope('sk-login', sid)).expect(200);
     expect(openChallenge(ch.text).meta.data.target).toBe(TARGET);
-    expect((await http.get(`/auth/sk/status?sid=${sid}`)).body).toEqual({ state: 'challenged' });
+    expect((await http.get(`/auth/sk/status?sid=${sid}`)).body).toEqual({ state: 'challenged', expiresInMs: expect.any(Number) });
     // An older app build with the embedded id posts the old target to the old alias.
     const { sid: sid2 } = (await http.post('/auth/sk/init')).body;
     const old = encryptEnvelope({ sender: phone, recipientAddress: server.address, plaintext: '', meta: loginMeta('demo', 'sk-login', sid2) });
     await http.post('/auth/sk/login').set('content-type', 'text/plain').send(old).expect(200);
-    expect((await http.get(`/auth/sk/status?sid=${sid2}`)).body).toEqual({ state: 'challenged' });
+    expect((await http.get(`/auth/sk/status?sid=${sid2}`)).body).toEqual({ state: 'challenged', expiresInMs: expect.any(Number) });
   });
 
   it('an embedded target keeps the older payload form', async () => {
@@ -151,7 +151,7 @@ describe('SkLoginModule over HTTP', () => {
     expect(ttlMs).toBe(120_000);
     expect(qrSvg).toContain('<svg');
 
-    expect((await http.get(`/auth/sk/status?sid=${sid}`).expect(200)).body).toEqual({ state: 'new' });
+    expect((await http.get(`/auth/sk/status?sid=${sid}`).expect(200)).body).toEqual({ state: 'new', expiresInMs: expect.any(Number) });
 
     // The app: a request with challenge v2, text/plain, no body parser on the server.
     const ch = await http
@@ -168,7 +168,7 @@ describe('SkLoginModule over HTTP', () => {
       { name: 'IP-адрес', value: '203.0.113.9' },
       { name: 'Браузер', value: 'Chrome, Windows' },
     ]);
-    expect((await http.get(`/auth/sk/status?sid=${sid}`)).body).toEqual({ state: 'challenged' });
+    expect((await http.get(`/auth/sk/status?sid=${sid}`)).body).toEqual({ state: 'challenged', expiresInMs: expect.any(Number) });
 
     const ok = await http.post('/auth/sk/login').set('content-type', 'text/plain').send(envelope('sk-login-code', sid, code)).expect(200);
     expect(ok.body).toEqual({ sent: true });

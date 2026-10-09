@@ -92,10 +92,16 @@ export interface InitResponse extends QrInit {
 
 /** The module's `GET status` response: the state plus whatever `onAuthenticated` merged in. */
 export interface StatusResponse {
-  state: 'new' | 'challenged' | 'authenticated' | 'denied' | 'cancelled' | 'expired' | (string & {});
+  /** `failed` is for a service's own transport: the request is over for a
+   *  reason outside the protocol (the site session ended, a limit hit);
+   *  polling stops and `message` is shown as the final view. */
+  state: 'new' | 'challenged' | 'authenticated' | 'denied' | 'cancelled' | 'expired' | 'failed' | (string & {});
   /** For `denied`: the reason from `access`. */
   reason?: string;
+  /** For `denied` and `failed`: the text to show instead of the widget's own. */
   message?: string;
+  /** For `new` and `challenged`: time left by the server clock; the countdown follows it. */
+  expiresInMs?: number;
   [extra: string]: unknown;
 }
 
@@ -158,6 +164,8 @@ export interface SkLoginWidgetOptions extends SheetOptions {
   complete?: (sid: string, extra: Record<string, unknown>) => Promise<Record<string, unknown> | void>;
   /** `complete` rejected; the error is already on the screen. */
   onCompleteError?: (error: unknown) => void;
+  /** `transport.status` answered `failed`; the message is already on the screen. */
+  onFailed?: (message: string | undefined) => void;
   /** `transport.cancel` rejected; the error is already on the screen with "Try again". */
   onCancelError?: (error: unknown) => void;
   /** Offer the manual code entry after the scan. Default `true`; forced off without `transport.submitCode`. */
@@ -326,6 +334,15 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
     sheet.show('denied');
     options.onDenied?.(reason, message);
   };
+  // The service ended the request for its own reason: a final view with its text.
+  const failed = (message?: string) => {
+    sid = '';
+    finishing = true;
+    sheet.stop();
+    failedText.textContent = message || t.completeFailed;
+    sheet.reopen('failed');
+    options.onFailed?.(message);
+  };
   // "Cancel" in the app: the server received sk-login-cancel.
   const cancelled = () => {
     sid = '';
@@ -342,9 +359,10 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
       // While we waited, polling may have been stopped (code entry, close,
       // a new request): the answer is about a stale sid, leave the screen alone.
       if (!pollTimer || mine !== generation) return;
-      const { state, reason, message, ...extra } = body;
+      const { state, reason, message, expiresInMs, ...extra } = body;
       if (state === 'authenticated') return finish(extra);
       if (state === 'denied') return deny(reason, message);
+      if (state === 'failed') return failed(message);
       if (state === 'expired') {
         // The server already forgot the request: nothing to cancel on close.
         sid = '';
@@ -363,6 +381,7 @@ export function mountSkLogin(options: SkLoginWidgetOptions): SkLoginWidget {
           codeHint.classList.remove('skl-hidden');
         }
       }
+      if (typeof expiresInMs === 'number') sheet.sync(expiresInMs);
     } catch {
       // The network blinked: the next tick will retry.
     }

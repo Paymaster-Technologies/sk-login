@@ -376,6 +376,111 @@ describe('dialog mode', () => {
   });
 });
 
+describe('server time', () => {
+  it('the countdown follows expiresInMs from status instead of the local TTL', async () => {
+    // The server's deadline is 31 s after the first poll; each answer says what is left.
+    const deadline = Date.now() + 1000 + 31_000;
+    const transport = fakeTransport([], { status: vi.fn(async () => ({ state: 'new', expiresInMs: deadline - Date.now() })) });
+    const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(0);
+    const ttl = w.element.querySelector<HTMLElement>('[data-r="ttl"]')!;
+    expect(ttl.textContent).toBe('2:00');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(ttl.textContent).toBe('0:31');
+    // Half a minute later the request is over by the server clock, long before the local two minutes.
+    await vi.advanceTimersByTimeAsync(32_000);
+    expect(hidden(w.element.querySelector('[data-r="expired"]')!)).toBe(false);
+  });
+
+  it('expiresInMs in init shortens the countdown from the start', async () => {
+    const transport = fakeTransport([{ state: 'new' }], { init: vi.fn(async () => ({ ...INIT, expiresInMs: 45_000 })) });
+    const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(w.element.querySelector<HTMLElement>('[data-r="ttl"]')!.textContent).toBe('0:45');
+  });
+});
+
+describe('failed', () => {
+  it('stops polling, shows the message as a final view and reports onFailed', async () => {
+    const transport = fakeTransport([{ state: 'new' }, { state: 'failed', message: 'Session over' }]);
+    const onFailed = vi.fn();
+    const cancel = vi.fn(async () => {});
+    const w = mountSkLogin({ container, transport: { ...transport, cancel }, pollMs: 1000, onSuccess: () => {}, onFailed });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(view(w.element)).toBe('failed');
+    expect(w.element.querySelector('[data-r="failed-text"]')!.textContent).toBe('Session over');
+    expect(onFailed).toHaveBeenCalledWith('Session over');
+    const calls = transport.status.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(transport.status.mock.calls.length).toBe(calls);
+    // The request is over on the server: nothing to cancel.
+    w.close();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('without a message the widget uses its own text', async () => {
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'failed' }]), pollMs: 1000, lang: 'en', onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(view(w.element)).toBe('failed');
+    expect(w.element.querySelector('[data-r="failed-text"]')!.textContent).not.toBe('');
+  });
+});
+
+describe('onRestart', () => {
+  it('"Try again" inline hands the new attempt to the page: the sheet hides, onClose("restart"), no new init', async () => {
+    const onRestart = vi.fn();
+    const onClose = vi.fn();
+    const transport = fakeTransport([{ state: 'cancelled' }]);
+    const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {}, onRestart, onClose });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(view(w.element)).toBe('cancelled');
+    w.element.querySelector<HTMLElement>('[data-view="cancelled"] [data-r="close"]')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onRestart).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith('restart');
+    expect(hidden(w.element)).toBe(true);
+    expect(transport.init).toHaveBeenCalledTimes(1);
+    // The page decides: open() makes the new request.
+    w.open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.init).toHaveBeenCalledTimes(2);
+  });
+
+  it('"Refresh" on an expired QR goes through onRestart too', async () => {
+    const onRestart = vi.fn();
+    const transport = fakeTransport([{ state: 'expired' }]);
+    const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {}, onRestart });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(hidden(w.element.querySelector('[data-r="expired"]')!)).toBe(false);
+    w.element.querySelector<HTMLElement>('[data-r="refresh"]')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onRestart).toHaveBeenCalledTimes(1);
+    expect(transport.init).toHaveBeenCalledTimes(1);
+  });
+
+  it('without onRestart "Try again" requests a new QR itself', async () => {
+    const transport = fakeTransport([{ state: 'cancelled' }]);
+    const w = mountSkLogin({ container, transport, pollMs: 1000, onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(1000);
+    w.element.querySelector<HTMLElement>('[data-view="cancelled"] [data-r="close"]')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.init).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('hideTitle', () => {
+  it('inline: hides the title in the bar', async () => {
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }]), hideTitle: true, onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hidden(w.element.querySelector('.skl-title')!)).toBe(true);
+  });
+
+  it('dialog: the title stays', async () => {
+    const w = mountSkLogin({ transport: fakeTransport([{ state: 'new' }]), hideTitle: true, onSuccess: () => {} });
+    expect(hidden(w.element.querySelector('.skl-title')!)).toBe(false);
+  });
+});
+
 describe('httpTransport', () => {
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 

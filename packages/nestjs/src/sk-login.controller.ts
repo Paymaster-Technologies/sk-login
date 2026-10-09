@@ -101,7 +101,7 @@ export function createSkLoginController(prefix: string): Type<unknown> {
         return json(res, 200, { state: 'authenticated', ...extra });
       }
       if (result.state === 'denied') return json(res, 200, { state: 'denied', reason: result.reason });
-      json(res, 200, { state: result.state });
+      json(res, 200, result.expiresInMs === undefined ? { state: result.state } : { state: result.state, expiresInMs: result.expiresInMs });
     }
 
     @Post(p('code'))

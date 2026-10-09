@@ -111,12 +111,16 @@ export interface DataRequestInit {
   schemeUrl: string;
   expiresAt: number;
   ttlMs: number;
+  /** Time left by the server clock (equals `ttlMs` here). */
+  expiresInMs: number;
 }
 
 export type DataReply = { kind: 'challenge'; armored: string } | { kind: 'filled'; address: string } | { kind: 'cancelled' };
 
+/** `expiresInMs` comes with an open request: time left by the server clock. */
 export type DataRequestPoll =
-  | { state: 'new' | 'challenged' | 'cancelled' | 'expired' }
+  | { state: 'new' | 'challenged'; expiresInMs: number }
+  | { state: 'cancelled' | 'expired' }
   | { state: 'filled'; values: Record<string, string>; sender: string; filledAt: number };
 
 /** Owner key from a session token: the token itself never sits in the store. */
@@ -167,6 +171,7 @@ export class SkDataRequest {
       schemeUrl: `${SK_REQUEST_SCHEME_URL}?${query}`,
       expiresAt,
       ttlMs: this.ttlMs,
+      expiresInMs: this.ttlMs,
     };
   }
 
@@ -259,7 +264,8 @@ export class SkDataRequest {
       await this.store.delete(sid);
       return { state: 'filled', values: values!, sender: sender!, filledAt: filledAt! };
     }
-    return { state: entry.state };
+    if (entry.state === 'cancelled') return { state: 'cancelled' };
+    return { state: entry.state, expiresInMs: entry.expiresAt - this.now() };
   }
 
   private async checkCode(entry: DataPending, code: string): Promise<void> {

@@ -67,4 +67,4 @@ Exports: `SkLogin`, `SkDataRequest`, `LoginError`, `MemoryPendingStore`,
 `generateMnemonic`, `deriveIdentityKeys`, `keyCheckDigits`, `encryptEnvelope`,
 `decryptEnvelope`, `loginMeta`, `requestMeta`, `payloadQuery`.
 
-Protocol, API and onboarding description: [repository README](https://github.com/paymastech/sk-login#readme).
+Protocol, API and onboarding description: [repository README](https://github.com/Paymaster-Technologies/sk-login#readme).

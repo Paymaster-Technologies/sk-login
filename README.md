@@ -2,7 +2,7 @@
 
 Passwordless sign-in and form filling from the Secret Keeper vault for
 websites: Node core, NestJS module, browser widget, and a
-[.NET package](https://github.com/paymastech/sk-login-dotnet).
+[.NET package](https://github.com/Paymaster-Technologies/sk-login-dotnet).
 
 Passwordless sign-in for a website: the user scans a QR code with the
 Secret Keeper app (or opens it with a button on the phone), confirms in
@@ -38,7 +38,7 @@ The repository is a monorepo of three packages and an example:
 Adapters for other frameworks (Express, Fastify, Next.js, Koa) are built
 on top of `core` in a few dozen lines, see ["Other frameworks"](#other-frameworks).
 For .NET there is a separate implementation of the same protocol:
-[paymastech/sk-login-dotnet](https://github.com/paymastech/sk-login-dotnet)
+[Paymaster-Technologies/sk-login-dotnet](https://github.com/Paymaster-Technologies/sk-login-dotnet)
 (`Paymastech.SkLogin` and `Paymastech.SkLogin.AspNetCore`); the widget from
 this repository works with it unchanged.
 
@@ -49,11 +49,11 @@ npm i @paymastech/sk-login-nestjs @paymastech/sk-login-widget
 ```
 
 Until the packages are published to npm, install them from the tarballs
-of the [release](https://github.com/paymastech/sk-login/releases/latest)
+of the [release](https://github.com/Paymaster-Technologies/sk-login/releases/latest)
 (all three at once so that `core` resolves locally):
 
 ```bash
-R=https://github.com/paymastech/sk-login/releases/download/v0.6.0
+R=https://github.com/Paymaster-Technologies/sk-login/releases/download/v0.6.0
 npm i $R/paymastech-sk-login-core-0.6.0.tgz $R/paymastech-sk-login-nestjs-0.6.0.tgz $R/paymastech-sk-login-widget-0.6.0.tgz
 ```
 

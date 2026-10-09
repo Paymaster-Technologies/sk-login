@@ -58,7 +58,7 @@ SkLoginModule.forRootAsync<User>({
 ```
 
 Full description of the options, the HTTP API, error codes, target
-onboarding and running on several replicas: [repository README](https://github.com/paymastech/sk-login#readme).
+onboarding and running on several replicas: [repository README](https://github.com/Paymaster-Technologies/sk-login#readme).
 Browser side: [`@paymastech/sk-login-widget`](https://www.npmjs.com/package/@paymastech/sk-login-widget).
 
 Works on Express and Fastify (Nest 10 and 11). The module reads the

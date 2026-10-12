@@ -144,6 +144,7 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-info { display: flex; flex-direction: column; align-items: stretch; padding-top: 8px; }
 .skl-info-icon { display: block; width: 40px; height: 40px; margin: 0 auto; color: var(--skl-primary); }
 .skl-info-icon.danger { color: var(--skl-danger); }
+.skl-info-icon.muted { color: var(--skl-secondary); }
 .skl-info-text { margin: 16px 0 24px; font-size: 1rem; line-height: 1.45; }
 .skl-btn.outline { width: 100%; min-height: 48px; border-radius: 999px; border: 1px solid var(--skl-primary); background: transparent; color: var(--skl-primary); min-width: 0; }
 .skl-expired { position: absolute; inset: 0; z-index: 2; display: flex; align-items: flex-end; background: rgba(0, 0, 0, 0.45); }

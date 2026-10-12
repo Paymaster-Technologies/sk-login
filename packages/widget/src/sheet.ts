@@ -159,7 +159,8 @@ export const SCAN_ICON =
   '<svg class="skl-hint-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm8-12v8h8V3h-8zm6 6h-4V5h4v4zm-6 4h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm4 0h2v2h-2v-2zm2 2h2v2h-2v-2zm-4 0h2v2h-2v-2zm2-6h2v2h-2v-2zm2 2h2v2h-2v-2z"/></svg>';
 export const ICON = (body: string, cls = '') =>
   `<svg class="skl-info-icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
-export const CANCEL_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>');
+/** The person declined in the app: a neutral cross, neither an error (danger) nor an info (primary). */
+export const CANCEL_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>', 'muted');
 export const CLOCK_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>');
 export const ERROR_ICON = ICON('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 15.5v.5"/>', 'danger');
 

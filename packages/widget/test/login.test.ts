@@ -366,6 +366,8 @@ describe('dialog mode', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(onCancelled).toHaveBeenCalledTimes(1);
     expect(view(w.element)).toBe('cancelled');
+    // A decline is neither an error nor an info: the cross is muted.
+    expect(w.element.querySelector('[data-view="cancelled"] .skl-info-icon')!.classList.contains('muted')).toBe(true);
     expect((w.element as HTMLDialogElement).open).toBe(true);
     expect(onClose).not.toHaveBeenCalled();
     w.element.querySelector<HTMLElement>('[data-view="cancelled"] [data-r="close"]')!.click();

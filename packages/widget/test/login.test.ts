@@ -491,6 +491,19 @@ describe('hideTitle', () => {
   });
 });
 
+describe('frameless', () => {
+  it('inline: the card goes, the page already is a panel', async () => {
+    const w = mountSkLogin({ container, transport: fakeTransport([{ state: 'new' }]), frameless: true, onSuccess: () => {} });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(w.element.classList.contains('skl-frameless')).toBe(true);
+  });
+
+  it('dialog: ignored, the dialog keeps its card', async () => {
+    const w = mountSkLogin({ transport: fakeTransport([{ state: 'new' }]), frameless: true, onSuccess: () => {} });
+    expect(w.element.classList.contains('skl-frameless')).toBe(false);
+  });
+});
+
 describe('httpTransport', () => {
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 

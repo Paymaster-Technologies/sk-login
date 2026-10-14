@@ -72,6 +72,7 @@ Common to both popups:
 | `pollMs` | 2000 | `status` polling period |
 | `container` | | render inline into this element instead of a modal dialog (see "Inline") |
 | `hideTitle` | `false` | inline only: no bar at all (the title and the empty close slot), the page has its own heading |
+| `frameless` | `false` | inline only: no card around the views (border, background, radius) - the page is already a panel, a second frame would nest panels |
 
 `mountSkLogin`:
 
@@ -151,7 +152,8 @@ backdrop, no close button, no Esc, the width follows the container (up to
 button is "Try again" and starts a new request (or calls `onRestart` when
 it is set); `close()` hides the sheet and `open()` shows it again with a
 new request. `hideTitle` drops the bar (the title row) when the page has
-its own heading. `element` is the inline
+its own heading; `frameless` drops the card (border, background, radius)
+when the page already draws one. `element` is the inline
 root (`div.skl.skl-inline`), otherwise the `<dialog>`.
 
 `mountSkRequest`:

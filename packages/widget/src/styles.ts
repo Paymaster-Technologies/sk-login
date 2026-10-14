@@ -63,6 +63,8 @@ dialog.skl::backdrop { background: rgba(0, 0, 0, 0.54); }
 .skl-inline .skl-close { visibility: hidden; }
 .skl-inline .skl-handle { display: none !important; }
 .skl-inline .skl-expired { border-radius: 14px; }
+.skl-inline.skl-frameless { border: 0; border-radius: 0; background: transparent; }
+.skl-inline.skl-frameless .skl-expired { border-radius: 0; }
 .skl-inner { padding: 12px 16px 16px; position: relative; }
 .skl-handle { display: none; width: 32px; height: 4px; border-radius: 2px; margin: 2px auto 10px; background: var(--skl-secondary); }
 .skl-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; min-height: 44px; }

@@ -112,6 +112,8 @@ export interface SheetOptions {
   container?: HTMLElement;
   /** Inline only: the page has its own heading, so the bar (title, close button slot) is not rendered. */
   hideTitle?: boolean;
+  /** Inline only: no card around the views (border, background, radius) - the page already is a panel. */
+  frameless?: boolean;
 }
 
 /** What `init` returns for the QR block (both flows). */
@@ -315,6 +317,8 @@ export function createSheet(cfg: SheetConfig): Sheet {
   if (inline) for (const b of root.querySelectorAll<HTMLElement>('.skl-info [data-r="close"]')) b.textContent = t.retry;
   // Inline: the page may own the heading; the bar then has nothing left to show.
   if (inline && options.hideTitle) root.classList.add('skl-no-bar');
+  // Inline: the host is already a card (auth.webmoney.com), a second frame nests panels.
+  if (inline && options.frameless) root.classList.add('skl-frameless');
 
   let current = 'scan';
   let ttlTimer: number | undefined;
